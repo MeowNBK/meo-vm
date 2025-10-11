@@ -6,7 +6,7 @@ void MeowVM::opNewArray() {
     if (currentBase + startIdx + count > static_cast<Int>(stackSlots.size()))
         throwVMError("NEW_ARRAY: register range OOB");
 
-    Array arr = new ObjArray();
+    Array arr = memoryManager->newObject<ObjArray>();
     arr->elements.reserve(count);
     for (Int i = 0; i < count; ++i) {
         arr->elements.push_back(stackSlots[currentBase + startIdx + i]);
@@ -20,7 +20,7 @@ void MeowVM::opNewHash() {
     if (currentBase + startIdx + count*2 > static_cast<Int>(stackSlots.size()))
         throwVMError("NEW_HASH: register range OOB");
 
-    Object hm = new ObjObject();
+    Object hm = memoryManager->newObject<ObjObject>();
     for (Int i = 0; i < count; ++i) {
         Value& key = stackSlots[currentBase + startIdx + i * 2];
         Value& val = stackSlots[currentBase + startIdx + i * 2 + 1];
@@ -69,7 +69,6 @@ void MeowVM::opGetIndex() {
             Str s = src.get<Str>();
             if (idx < 0 || idx >= static_cast<Int>(s.size())) {
                 std::ostringstream os;
-                auto proto = currentFrame->closure->proto;
                 os << "  -  Chỉ số vượt quá phạm vi: '" << idx << "'. ";
                 os << "  -  Được truy cập trên string: `\n" << _toString(s) << "\n`\n";
                 throwVMError(os.str());
