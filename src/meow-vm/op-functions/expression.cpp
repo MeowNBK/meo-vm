@@ -17,9 +17,7 @@ void MeowVM::opBinary() {
     if (auto func = opDispatcher.find(currentInst->op, left, right)) {
         result = (*func)(left, right);
     } else {
-        std::ostringstream os;
-        os << "!!! 🐛 LỖI: Không hỗ trợ toán tử: " << opToString(currentInst->op) << " cho " << valueTypeName(getValueType(left)) << " và " << valueTypeName(getValueType(right));
-        throwVMError(os.str());
+        throwVMError("Unsupported binary operator");
     }
 
     stackSlots[currentBase + dst] = result;
@@ -37,8 +35,7 @@ void MeowVM::opUnary() {
         result = (*func)(val);
     } else {
         std::ostringstream os;
-        os << "Không hỗ trợ toán tử: " << opToString(inst->op) << " với kiểu dữ liệu: " << valueTypeName(getValueType(val));
-        throwVMError(os.str());
+        throwVMError("Unsupported unary operator");
     }
 
     stackSlots[currentBase + dst] = result;

@@ -203,14 +203,12 @@ void MeowVM::opGetKeys() {
     Array keysArr = memoryManager->newObject<ObjArray>();
 
     if (src.is_instance()) {
-
         Instance inst = src.get<Instance>();
         keysArr->elements.reserve(inst->fields.size());
         for (const auto& pair : inst->fields) {
             keysArr->elements.push_back(Value(pair.first));
         }
     } else if (src.is_hash()) {
-
         Object obj = src.get<Object>();
         keysArr->elements.reserve(obj->fields.size());
         for (const auto& pair : obj->fields) {

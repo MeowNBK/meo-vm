@@ -125,3 +125,10 @@ public:
     template<typename T>
     bool is() const noexcept { return std::holds_alternative<T>(data_); }
 };
+
+enum class ValueType {
+    Null, Int, Real, Bool, String,
+    Array, HashTable, Upvalue, Function,
+    Class, Instance, BoundMethod,
+    Proto, NativeFn, TotalValueTypes
+};
