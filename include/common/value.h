@@ -110,6 +110,22 @@ public:
     [[nodiscard]] inline bool is_module() const noexcept { return is<Module>(); }
     [[nodiscard]] inline bool is_native_fn() const noexcept { return is<NativeFn>(); }
 
+    // [[nodiscard]] inline Null as_null() const noexcept { return get<Null>(); }
+    // [[nodiscard]] inline Bool as_bool() const noexcept { return get<Bool>(); }
+    // [[nodiscard]] inline Int as_int() const noexcept { return get<Int>(); }
+    // [[nodiscard]] inline Real as_real() const noexcept { return get<Real>(); }
+    // [[nodiscard]] inline Array as_array() const noexcept { return get<Array>(); }
+    // [[nodiscard]] inline const Str& as_string() const noexcept{ return get<Str>(); }
+    // [[nodiscard]] inline Object as_hash() const noexcept { return get<Object>(); }
+    // [[nodiscard]] inline Class as_class() const noexcept { return get<Class>(); }
+    // [[nodiscard]] inline Instance as_instance() const noexcept { return get<Instance>(); }
+    // [[nodiscard]] inline BoundMethod as_bound_method() const noexcept { return get<BoundMethod>(); }
+    // [[nodiscard]] inline Upvalue as_upvalue() const noexcept { return get<Upvalue>(); }
+    // [[nodiscard]] inline Proto as_proto() const noexcept { return get<Proto>(); }
+    // [[nodiscard]] inline Function as_function() const noexcept { return get<Function>(); }
+    // [[nodiscard]] inline Module as_module() const noexcept { return get<Module>(); }
+    // [[nodiscard]] inline const NativeFn& as_native_fn() const noexcept { return get<NativeFn>(); }
+
     template<typename T>
     const T& get() const { return std::get<T>(data_); }
 

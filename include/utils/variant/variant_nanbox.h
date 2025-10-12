@@ -1,32 +1,6 @@
-/**
- * @file variant.h
- * @brief NaN-boxing Variant — ultra-optimized edition (64-bit little-endian).
- * @author LazyPaws & Mèo mất não (2025)
- *
- * FULL SPEED MODE:
- *  - Requires C++20 (std::bit_cast) or GCC/Clang builtins.
- *  - Assumes 64-bit little-endian. All nanboxability checks remain.
- *  - Uses uintptr_t conversions for pointer packing/unpacking (fast).
- *  - Optional tiny asm fast-paths for x86_64 (guarded).
- *
- * WARNING: Extremely performance-oriented. Thread-local scratch is used for get()/get_if().
- *          Reentrancy on same thread will clobber returned references. You asked for this.
- */
-
 #pragma once
 
 #include "common/pch.h"
-
-#include <cstdint>
-#include <cstddef>
-#include <cstring>
-#include <type_traits>
-#include <utility>
-#include <limits>
-#include <stdexcept>
-#include <array>
-#include <bit>         // std::bit_cast (C++20)
-#include <cassert>
 
 namespace meow::utils {
 
@@ -277,63 +251,92 @@ public:
     template <typename T>
     MEOW_ALWAYS_INLINE [[nodiscard]] bool is() const noexcept { return holds<T>(); }
 
-    // ---------------------- ultra-fast thread_local scratch (you asked) ----------------------
-    // 8-byte aligned buffer; returned references are valid until next Variant op on same thread.
-    static inline void* tls_scratch_ptr() noexcept {
-        thread_local alignas(8) unsigned char tls_storage[8];
-        return static_cast<void*>(tls_storage);
-    }
-    template <typename T>
-    static MEOW_ALWAYS_INLINE T* tls_write_and_get(T&& v) noexcept {
-        void* p = tls_scratch_ptr();
-        // zero 8 bytes (fast) then copy
-        std::memset(p, 0, 8);
-        std::memcpy(p, &v, sizeof(T));
-        return reinterpret_cast<T*>(p);
-    }
+    // static inline void* tls_scratch_ptr() noexcept {
+    //     thread_local alignas(8) unsigned char tls_storage[8];
+    //     return static_cast<void*>(tls_storage);
+    // }
+    // template <typename T>
+    // static MEOW_ALWAYS_INLINE T* tls_write_and_get(T&& v) noexcept {
+    //     void* p = tls_scratch_ptr();
+    //     // zero 8 bytes (fast) then copy
+    //     std::memset(p, 0, 8);
+    //     std::memcpy(p, &v, sizeof(T));
+    //     return reinterpret_cast<T*>(p);
+    // }
 
     // ---------------------- ACCESSORS (UNSAFE but fastest) ----------------------
 
-    // unchecked get (reference into tls)
+    // // unchecked get (reference into tls)
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] T& get() noexcept {
+    //     using U = std::decay_t<T>;
+    //     U tmp = reconstruct_value<U>();
+    //     return *tls_write_and_get<U>(std::move(tmp));
+    // }
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] const T& get() const noexcept {
+    //     using U = std::decay_t<T>;
+    //     U tmp = reconstruct_value<U>();
+    //     return *tls_write_and_get<U>(std::move(tmp));
+    // }
+
+    // // safe_get (checks)
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] T& safe_get() {
+    //     if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
+    //     T tmp = reconstruct_value<std::decay_t<T>>();
+    //     return *tls_write_and_get<T>(std::move(tmp));
+    // }
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] const T& safe_get() const {
+    //     if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
+    //     T tmp = reconstruct_value<std::decay_t<T>>();
+    //     return *tls_write_and_get<T>(std::move(tmp));
+    // }
+
     template <typename T>
-    MEOW_ALWAYS_INLINE [[nodiscard]] T& get() noexcept {
-        using U = std::decay_t<T>;
-        U tmp = reconstruct_value<U>();
-        return *tls_write_and_get<U>(std::move(tmp));
+    MEOW_ALWAYS_INLINE [[nodiscard]] std::decay_t<T> get() noexcept {
+        return reconstruct_value<std::decay_t<T>>();
     }
     template <typename T>
-    MEOW_ALWAYS_INLINE [[nodiscard]] const T& get() const noexcept {
-        using U = std::decay_t<T>;
-        U tmp = reconstruct_value<U>();
-        return *tls_write_and_get<U>(std::move(tmp));
+    MEOW_ALWAYS_INLINE [[nodiscard]] std::decay_t<T> get() const noexcept {
+        return reconstruct_value<std::decay_t<T>>();
+    }
+    template <typename T>
+    MEOW_ALWAYS_INLINE [[nodiscard]] std::decay_t<T> safe_get() {
+        if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
+        return reconstruct_value<std::decay_t<T>>();
+    }
+    template <typename T>
+    MEOW_ALWAYS_INLINE [[nodiscard]] const std::decay_t<T> safe_get() const {
+        if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
+        return reconstruct_value<std::decay_t<T>>();
     }
 
-    // safe_get (checks)
-    template <typename T>
-    MEOW_ALWAYS_INLINE [[nodiscard]] T& safe_get() {
-        if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
-        T tmp = reconstruct_value<std::decay_t<T>>();
-        return *tls_write_and_get<T>(std::move(tmp));
-    }
-    template <typename T>
-    MEOW_ALWAYS_INLINE [[nodiscard]] const T& safe_get() const {
-        if (MEOW_UNLIKELY(!holds<T>())) throw std::bad_variant_access();
-        T tmp = reconstruct_value<std::decay_t<T>>();
-        return *tls_write_and_get<T>(std::move(tmp));
-    }
+    // // get_if returns pointer into tls or nullptr
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] T* get_if() noexcept {
+    //     if (MEOW_UNLIKELY(!holds<T>())) return nullptr;
+    //     T tmp = reconstruct_value<std::decay_t<T>>();
+    //     return tls_write_and_get<T>(std::move(tmp));
+    // }
+    // template <typename T>
+    // MEOW_ALWAYS_INLINE [[nodiscard]] const T* get_if() const noexcept {
+    //     if (MEOW_UNLIKELY(!holds<T>())) return nullptr;
+    //     T tmp = reconstruct_value<std::decay_t<T>>();
+    //     return tls_write_and_get<T>(std::move(tmp));
+    // }
 
     // get_if returns pointer into tls or nullptr
     template <typename T>
     MEOW_ALWAYS_INLINE [[nodiscard]] T* get_if() noexcept {
         if (MEOW_UNLIKELY(!holds<T>())) return nullptr;
-        T tmp = reconstruct_value<std::decay_t<T>>();
-        return tls_write_and_get<T>(std::move(tmp));
+        return reconstruct_value<std::decay_t<T>>();
     }
     template <typename T>
     MEOW_ALWAYS_INLINE [[nodiscard]] const T* get_if() const noexcept {
         if (MEOW_UNLIKELY(!holds<T>())) return nullptr;
-        T tmp = reconstruct_value<std::decay_t<T>>();
-        return tls_write_and_get<T>(std::move(tmp));
+        return reconstruct_value<std::decay_t<T>>();
     }
 
     // visit (O(1) jump table)
