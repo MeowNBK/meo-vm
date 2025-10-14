@@ -1,4 +1,5 @@
 #pragma once
+
 #include "definitions.h"
 
 class MemoryManager;

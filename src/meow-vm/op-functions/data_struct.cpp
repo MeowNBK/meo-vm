@@ -1,17 +1,22 @@
 #include "meow_vm.h"
 
 void MeowVM::opNewArray() {
-    Int dst = currentInst->args[0], startIdx = currentInst->args[1], count = currentInst->args[2];
-    if (count < 0 || startIdx < 0) throwVMError("NEW_ARRAY: invalid range");
-    if (currentBase + startIdx + count > static_cast<Int>(stackSlots.size()))
-        throwVMError("NEW_ARRAY: register range OOB");
-
-    Array arr = memoryManager->newObject<ObjArray>();
-    arr->elements.reserve(count);
-    for (Int i = 0; i < count; ++i) {
-        arr->elements.push_back(stackSlots[currentBase + startIdx + i]);
+    size_t dst = currentInst->args[0],
+           start_idx = currentInst->args[1],
+           count = currentInst->args[2];
+    if (count < 0 || start_idx < 0) {
+        throwVMError("NEW_ARRAY: invalid range");
     }
-    stackSlots[currentBase + dst] = Value(arr);
+    if (currentBase + start_idx + count > stackSlots.size()) {
+        throwVMError("NEW_ARRAY: register range OOB");
+    }
+
+    Array array = memoryManager->newObject<ObjArray>();
+    array->reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        array->push(stackSlots[currentBase + start_idx + 1]);
+    }
+    stackSlots[currentBase + dst] = Value(array);
 }
 
 void MeowVM::opNewHash() {
@@ -51,18 +56,16 @@ void MeowVM::opGetIndex() {
 
 
     if (key.is_int()) {
-        Int idx = _toInt(key);
+        size_t idx = _toInt(key);
         if (src.is_array()) {
             Array arr = src.get<Array>(); if (!arr) throwVMError("Array null in GET_INDEX");
-            auto &elems = arr->elements;
-            if (idx < 0 || idx >= static_cast<Int>(elems.size())) {
+            if (idx < 0 || idx >= arr->size()) {
                 std::ostringstream os;
                 os << "  -  Chỉ số vượt quá phạm vi: '" << idx << "'. ";
                 os << "  -  Được truy cập trên mảng: `\n" << _toString(arr) << "\n`";
                 throwVMError(os.str());
-
             }
-            stackSlots[currentBase + dst] = elems[idx];
+            stackSlots[currentBase + dst] = (*arr)[idx];
             return;
         }
         if (src.is_string()) {
@@ -133,11 +136,11 @@ void MeowVM::opSetIndex() {
         if (src.is_array()) {
             Array arr = src.get<Array>();
             if (idx < 0) throwVMError("Invalid index");
-            if (idx >= static_cast<Int>(arr->elements.size())) {
+            if (idx >= static_cast<Int>(arr->size())) {
                 if (idx > 10000000) throwVMError("Index too large");
-                arr->elements.resize(static_cast<size_t>(idx + 1));
+                arr->resize(static_cast<size_t>(idx + 1));
             }
-            arr->elements[static_cast<size_t>(idx)] = val;
+            (*arr)[static_cast<size_t>(idx)] = val;
             return;
         }
         if (src.is_string()) {
@@ -204,30 +207,30 @@ void MeowVM::opGetKeys() {
 
     if (src.is_instance()) {
         Instance inst = src.get<Instance>();
-        keysArr->elements.reserve(inst->fields.size());
+        keysArr->reserve(inst->fields.size());
         for (const auto& pair : inst->fields) {
-            keysArr->elements.push_back(Value(pair.first));
+            keysArr->push(Value(pair.first));
         }
     } else if (src.is_hash()) {
         Object obj = src.get<Object>();
-        keysArr->elements.reserve(obj->fields.size());
+        keysArr->reserve(obj->fields.size());
         for (const auto& pair : obj->fields) {
-            keysArr->elements.push_back(Value(pair.first));
+            keysArr->push(Value(pair.first));
         }
     } else if (src.is_array()) {
 
         Array arr = src.get<Array>();
-        Int size = static_cast<Int>(arr->elements.size());
-        keysArr->elements.reserve(size);
+        size_t size = arr->size();
+        keysArr->reserve(size);
         for (Int i = 0; i < size; ++i) {
-            keysArr->elements.push_back(Value(i));
+            keysArr->push(Value(i));
         }
     } else if (src.is_string()) {
         Str s = src.get<Str>();
         Int size = static_cast<Int>(s.length());
-        keysArr->elements.reserve(size);
+        keysArr->reserve(size);
         for (Int i = 0; i < size; ++i) {
-            keysArr->elements.push_back(Value(i));
+            keysArr->push(Value(i));
         }
     }
 
@@ -250,32 +253,32 @@ void MeowVM::opGetValues() {
     if (src.is_instance()) {
 
         Instance inst = src.get<Instance>();
-        valueArr->elements.reserve(inst->fields.size());
+        valueArr->reserve(inst->fields.size());
         for (const auto& pair : inst->fields) {
-            valueArr->elements.push_back(pair.second);
+            valueArr->push(pair.second);
         }
     } else if (src.is_hash()) {
 
         Object obj = src.get<Object>();
-        valueArr->elements.reserve(obj->fields.size());
+        valueArr->reserve(obj->fields.size());
         for (const auto& pair : obj->fields) {
-            valueArr->elements.push_back(pair.second);
+            valueArr->push(pair.second);
         }
     } else if (src.is_array()) {
 
         Array arr = src.get<Array>();
-        Int size = static_cast<Int>(arr->elements.size());
-        valueArr->elements.reserve(size);
-        for (const auto& element : arr->elements) {
-            valueArr->elements.push_back(element);
+        Int size = static_cast<Int>(arr->size());
+        valueArr->reserve(size);
+        for (const auto& element : (*arr)) {
+            valueArr->push(element);
         }
     } else if (src.is_string()) {
 
         Str s = src.get<Str>();
         Int size = static_cast<Int>(s.length());
-        valueArr->elements.reserve(size);
+        valueArr->reserve(size);
         for (const auto& c : s) {
-            valueArr->elements.push_back(Value(Str(1, c)));
+            valueArr->push(Value(Str(1, c)));
         }
     }
     stackSlots[currentBase + dst] = Value(valueArr);

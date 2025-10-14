@@ -2,7 +2,6 @@
 #include "pch.h"
 
 static Str trimTrailingZeros(const Str& s) {
-
     auto pos = s.find('.');
     if (pos == Str::npos) return s;
     size_t end = s.size();
@@ -70,11 +69,11 @@ Str MeowVM::_toString(const Value& v) {
     if (v.is_function()) return "<fn '" + v.get<Function>()->proto->sourceName + "'>";
     if (v.is_bound_method()) return "<bound method>";
     if (v.is_array()) {
-        const auto& vec = v.get<Array>()->elements;
+        const auto& vec = v.get<Array>();
         Str out = "[";
-        for (size_t i = 0; i < vec.size(); ++i) {
+        for (size_t i = 0; i < vec->size(); ++i) {
             if (i > 0) out += ", ";
-            out += _toString(vec[i]);
+            out += _toString((*vec)[i]);
         }
         out += "]";
         return out;
@@ -284,7 +283,7 @@ Bool MeowVM::_isTruthy(const Value& v) const {
         return r != 0.0 && !std::isnan(r);
     }
     if (v.is_string()) return !v.get<Str>().empty();
-    if (v.is_array()) return !v.get<Array>()->elements.empty();
+    if (v.is_array()) return !v.get<Array>()->empty();
     if (v.is_hash()) return !v.get<Object>()->fields.empty();
     return true;
 }

@@ -6,11 +6,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Str entryPath;
-    Bool isBinary = false;
+    std::string entryPath;
+    bool isBinary = false;
 
     for (int i = 1; i < argc; ++i) {
-        Str arg = argv[i];
+        std::string arg = argv[i];
         if (arg == "--binary") {
             isBinary = true;
         } else if (entryPath.empty()) {
