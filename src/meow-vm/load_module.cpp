@@ -1,5 +1,5 @@
 #include "meow_vm.h"
-#include "pch.h"
+#include "common/pch.h"
 
 #if defined(_WIN32)
 #include <windows.h>

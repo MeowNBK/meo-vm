@@ -1,6 +1,6 @@
 #pragma once
 #include "garbage_collector.h"
-#include "pch.h"
+#include "common/pch.h"
 
 class MeowVM;
 class MemoryManager {

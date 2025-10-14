@@ -1,6 +1,6 @@
 #include "meow_vm.h"
 #include "operator_dispatcher.h"
-#include "pch.h"
+#include "common/pch.h"
 
 void MeowVM::opBinary() {
     auto proto = currentFrame->closure->proto;

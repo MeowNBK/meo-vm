@@ -1,5 +1,5 @@
 #pragma once
-#include "meow_object.h"
+#include "core/meow_object.h"
 
 class MeowVM;
 
@@ -7,7 +7,7 @@ class GarbageCollector {
 public:
     virtual ~GarbageCollector() = default;
     
-    virtual void registerObject(MeowObject* obj) = 0;
+    virtual void registerObject(const MeowObject* object) = 0;
     
-    virtual void collect(MeowVM& vm) = 0;
+    virtual void collect(MeowVM& vm) noexcept = 0;
 };

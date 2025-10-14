@@ -1,5 +1,5 @@
 #include "meow_vm.h"
-#include "pch.h"
+#include "common/pch.h"
 
 static Str trimTrailingZeros(const Str& s) {
     auto pos = s.find('.');

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "value.h"
+#include "core/value.h"
 #include "memory_manager.h"
 
 class MeowEngine {

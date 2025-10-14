@@ -1,9 +1,9 @@
 #pragma once
 
 #include "common/pch.h"
-#include "common/op_codes.h"
-#include "common/value.h"
-#include "common/type_definitions.h"
+#include "core/op_codes.h"
+#include "core/value.h"
+#include "core/definitions.h"
 
 // --- Constants ---
 constexpr size_t NUM_OP_CODES = static_cast<size_t>(OpCode::TOTAL_OPCODES);
@@ -56,9 +56,9 @@ public:
 
 // #pragma once
 
-// #include "op_codes.h"
-// #include "value.h"
-// #include "pch.h"
+// #include "core/op_codes.h"
+// #include "core/value.h"
+// #include "common/pch.h"
 
 // class Value;
 

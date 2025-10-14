@@ -1,7 +1,8 @@
 #pragma once
 
 #include "garbage_collector.h"
-#include "pch.h"
+#include "core/meow_object.h"
+#include "common/pch.h"
 
 class MeowVM;
 
@@ -11,20 +12,55 @@ struct GCMetadata {
 
 class MarkSweepGC : public GarbageCollector, public GCVisitor {
 private:
-    std::unordered_map<MeowObject*, GCMetadata> metadata;
+    std::unordered_map<const MeowObject*, GCMetadata> metadata;
     MeowVM* vm = nullptr;
 
 public:
     ~MarkSweepGC() override;
 
-    void registerObject(MeowObject* obj) override;
+    void registerObject(const MeowObject* object) override;
 
-    void collect(MeowVM& vmInstance) override;
+    void collect(MeowVM& vm_instance) noexcept override;
 
-    void visitValue(Value& value) override;
+    void visit_value(const Value& value) noexcept override;
 
-    void visitObject(MeowObject* obj) override;
-
+    void visit_object(const MeowObject* object) noexcept override;
 private:
-    void mark(MeowObject* obj);
+    void mark(const MeowObject* object) noexcept;
 };
+
+// From IDEAS.txt
+// #pragma once
+
+// #include "common/pch.h"
+// #include "memory/gc_visitor.h"
+// #include "memory/garbage_collector.h"
+
+// namespace meow::runtime {
+//     struct ExecutionContext;
+//     struct BuiltinRegistry;
+// }
+
+// namespace meow::memory {
+//     struct GCMetadata { bool is_marked_ = false; };
+
+//     class MarkSweepGC : public GarbageCollector, public GCVisitor {
+//     private:
+//         std::unordered_map<const meow::core::MeowObject*, GCMetadata> metadata_;
+//         meow::runtime::ExecutionContext* context_ = nullptr;
+//         meow::runtime::BuiltinRegistry* builtins_ = nullptr;
+//     public:
+//         explicit MarkSweepGC(meow::runtime::ExecutionContext* context, meow::runtime::BuiltinRegistry* builtins) noexcept: context_(context), builtins_(builtins) {}
+//         ~MarkSweepGC() override;
+
+//         // -- Collector ---
+//         void register_object(const meow::core::MeowObject* object) override;
+//         size_t collect() noexcept override;
+
+//         // --- Visitor ---
+//         void visit_value(const meow::core::Value& value) noexcept override;
+//         void visit_object(const meow::core::MeowObject* object) noexcept override;
+//     private:
+//         void mark(const meow::core::MeowObject* object);
+//     };
+// }

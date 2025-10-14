@@ -1,6 +1,6 @@
 #pragma once
 
-#include "definitions.h"
+#include "core/objects.h"
 
 class MemoryManager;
 

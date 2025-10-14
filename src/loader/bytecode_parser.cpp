@@ -1,6 +1,6 @@
 #include "bytecode_parser.h"
 #include "memory_manager.h"
-#include "pch.h"
+#include "common/pch.h"
 
 static Str trim(const Str& s) {
     size_t a = s.find_first_not_of(" \t\r\n");

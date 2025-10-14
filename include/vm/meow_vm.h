@@ -1,10 +1,10 @@
 #pragma once
-#include "definitions.h"
+#include "core/objects.h"
 #include "bytecode_parser.h"
 #include "operator_dispatcher.h"
 #include "memory_manager.h"
 #include "meow_engine.h"
-#include "pch.h"
+#include "common/pch.h"
 
 class VMError : public std::runtime_error {
 public:

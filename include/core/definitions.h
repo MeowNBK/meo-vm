@@ -1,12 +1,13 @@
 #pragma once
 
 #include "common/pch.h"
-#include "common/value.h"
+#include "core/value.h"
 
 // --- Type alias ---
 using value_t = Value;
 using value_param_t = std::conditional_t<sizeof(value_t) <= sizeof(void*), const value_t, const value_t&>;
-using index_t = size_t;
+using value_return_t = value_param_t;
+using index_t = std::size_t;
 
 // --- Helper functions ---
 [[nodiscard]] inline ValueType get_value_type(value_param_t value) noexcept {

@@ -1,6 +1,7 @@
 #include "meow_vm.h"
 #include "mark_sweep_gc.h"
-#include "meow_object.h"
+#include "core/meow_object.h"
+// #include "gc_visitor.h"
 
 MeowVM::MeowVM(const Str& entryPointDir_) : entryPointDir(entryPointDir_) {
     memoryManager = std::make_unique<MemoryManager>(std::make_unique<MarkSweepGC>());
@@ -54,30 +55,30 @@ void MeowVM::interpret(const Str& entryPath, Bool isBinary) {
 
 void MeowVM::traceRoots(GCVisitor& visitor) {
     for (Value& val : stackSlots) {
-        visitor.visitValue(val);
+        visitor.visit_value(val);
     }
 
     for (auto& pair : moduleCache) {
-        visitor.visitObject(pair.second);
+        visitor.visit_object(pair.second);
     }
 
     for (ObjUpvalue* upvalue : openUpvalues) {
-        visitor.visitObject(upvalue);
+        visitor.visit_object(upvalue);
     }
 
     for (CallFrame& frame : callStack) {
-        visitor.visitObject(frame.closure);
-        visitor.visitObject(frame.module);
+        visitor.visit_object(frame.closure);
+        visitor.visit_object(frame.module);
     }
 
     for (auto& type_pair : builtinMethods) {
         for (auto& method_pair : type_pair.second) {
-            visitor.visitValue(method_pair.second);
+            visitor.visit_value(method_pair.second);
         }
     }
     for (auto& type_pair : builtinGetters) {
         for (auto& getter_pair : type_pair.second) {
-            visitor.visitValue(getter_pair.second);
+            visitor.visit_value(getter_pair.second);
         }
     }
 }

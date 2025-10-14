@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pch.h"
+#include "common/pch.h"
 
 struct ObjString;
 struct ObjArray;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "value.h"
-#include "op_codes.h"
-#include "meow_object.h"
-#include "common/type_definitions.h"
-#include "pch.h"
+#include "core/value.h"
+#include "core/op_codes.h"
+#include "core/meow_object.h"
+#include "core/definitions.h"
+#include "common/pch.h"
 
 struct Instruction {
     OpCode op;
@@ -38,9 +38,9 @@ struct ObjFunctionProto : public MeowObject {
     ObjFunctionProto(Int regs = 0, Int ups = 0, Str name = "<anon>")
         : numRegisters(regs), numUpvalues(ups), sourceName(std::move(name)) {}
 
-    void trace(GCVisitor& visitor) override {
+    inline void trace(GCVisitor& visitor) const noexcept override {
         for (auto& constant : constantPool) {
-            visitor.visitValue(constant);
+            visitor.visit_value(constant);
         }
     }
 };
@@ -61,10 +61,10 @@ struct ObjModule : public MeowObject {
     ObjModule(Str n = "", Str p = "", Bool b = false)
         : name(std::move(n)), path(std::move(p)), isBinary(b) {}
 
-    void trace(GCVisitor& visitor) override {
-        for (auto& kv : globals) visitor.visitValue(kv.second);
-        for (auto& kv : exports) visitor.visitValue(kv.second);
-        visitor.visitObject(mainProto);
+    inline void trace(GCVisitor& visitor) const noexcept override {
+        for (auto& kv : globals) visitor.visit_value(kv.second);
+        for (auto& kv : exports) visitor.visit_value(kv.second);
+        visitor.visit_object(mainProto);
     }
 };
 
@@ -79,8 +79,8 @@ struct ObjUpvalue : public MeowObject {
         state = State::CLOSED; 
     }
 
-    void trace(GCVisitor& visitor) override {
-        visitor.visitValue(closed);
+    inline void trace(GCVisitor& visitor) const noexcept override {
+        visitor.visit_value(closed);
     }
 };
 
@@ -89,10 +89,10 @@ struct ObjClosure : public MeowObject {
     std::vector<Upvalue> upvalues;
     ObjClosure(Proto p = nullptr) : proto(p), upvalues(p ? p->numUpvalues : 0) {}
 
-    void trace(GCVisitor& visitor) override {
-        visitor.visitObject(proto);
+    inline void trace(GCVisitor& visitor) const noexcept override {
+        visitor.visit_object(proto);
         for (auto& uv : upvalues) {
-            visitor.visitObject(uv);
+            visitor.visit_object(uv);
         }
     }
 };
@@ -113,12 +113,12 @@ struct ObjClass : public MeowObject {
     std::unordered_map<Str, Value> methods;
     ObjClass(Str n = "") : name(std::move(n)) {}
 
-    void trace(GCVisitor& visitor) override {
+    inline void trace(GCVisitor& visitor) const noexcept override {
         if (superclass) {
-            visitor.visitObject(*superclass);
+            visitor.visit_object(*superclass);
         }
         for (auto& method : methods) {
-            visitor.visitValue(method.second);
+            visitor.visit_value(method.second);
         }
     }
 };
@@ -128,10 +128,10 @@ struct ObjInstance : public MeowObject {
     std::unordered_map<Str, Value> fields;
     ObjInstance(Class k = nullptr) : klass(k) {}
 
-    void trace(GCVisitor& visitor) override {
-        visitor.visitObject(klass);
+    inline void trace(GCVisitor& visitor) const noexcept override {
+        visitor.visit_object(klass);
         for (auto& field : fields) {
-            visitor.visitValue(field.second);
+            visitor.visit_value(field.second);
         }
     }
 };
@@ -141,9 +141,9 @@ struct ObjBoundMethod : public MeowObject {
     Function callable;
     ObjBoundMethod(Instance r = nullptr, Function c = nullptr) : receiver(r), callable(c) {}
 
-    void trace(GCVisitor& visitor) override {
-        visitor.visitObject(receiver);
-        visitor.visitObject(callable);
+    inline void trace(GCVisitor& visitor) const noexcept override {
+        visitor.visit_object(receiver);
+        visitor.visit_object(callable);
     }
 };
 
@@ -152,7 +152,7 @@ struct ObjBoundMethod : public MeowObject {
 //     ObjArray() = default;
 //     ObjArray(std::vector<Value> v) : elements(std::move(v)) {}
 
-//     void trace(GCVisitor& visitor) override {
+//     inline void trace(GCVisitor& visitor) const noexcept override {
 //         for (auto& element : elements) {
 //             visitor.visitValue(element);
 //         }
@@ -236,9 +236,9 @@ public:
     inline const_reverse_iterator rbegin() const noexcept { return elements_.rbegin(); }
     inline const_reverse_iterator rend() const noexcept { return elements_.rend(); }
 
-    inline void trace(GCVisitor& visitor) override {
+    inline void trace(GCVisitor& visitor) const noexcept override {
         for (auto& element : elements_) {
-            visitor.visitValue(element);
+            visitor.visit_value(element);
         }
     }
 };
@@ -285,7 +285,7 @@ public:
     inline const_reverse_iterator rbegin() const noexcept { return data_.rbegin(); }
     inline const_reverse_iterator rend() const noexcept { return data_.rend(); }
 
-    inline void trace(GCVisitor&) noexcept override {}
+    inline void trace(GCVisitor&) const noexcept override {}
 };
 
 struct ObjObject : public MeowObject {
@@ -293,9 +293,9 @@ struct ObjObject : public MeowObject {
     ObjObject() = default;
     ObjObject(std::unordered_map<Str, Value> f) : fields(std::move(f)) {}
 
-    void trace(GCVisitor& visitor) override {
+    inline void trace(GCVisitor& visitor) const noexcept override {
         for (auto& field : fields) {
-            visitor.visitValue(field.second);
+            visitor.visit_value(field.second);
         }
     }
 };
