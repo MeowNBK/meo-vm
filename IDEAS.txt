@@ -1,0 +1,2078 @@
+===== FILE: ./include/common/pch.h =====
+/**
+ * @file pch.h
+ * @author LazyPaws
+ * @copyright Copyright(c) 2025 LazyPaws - All rights reserved
+ */
+
+#pragma once
+
+// Containers
+#include <array>
+#include <vector>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <variant>
+#include <optional>
+
+// Utilities
+#include <memory>
+#include <functional>
+#include <utility>
+#include <algorithm>
+#include <cstdint>
+#include <cctype>
+#include <limits>
+#include <cmath>
+
+// IO & Filesystem
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <filesystem>
+#include <system_error>
+
+// Error handling
+#include <stdexcept>
+#include <cerrno>
+#include <cstdlib>
+
+
+===== FILE: ./include/core/meow_object.h =====
+#pragma once
+
+namespace meow::memory { struct GCVisitor; }
+
+namespace meow::core {
+    struct MeowObject {
+        virtual ~MeowObject() = default;
+
+        virtual void trace(meow::memory::GCVisitor& visitor) const noexcept = 0;
+    };
+}
+
+
+===== FILE: ./include/core/objects/array.h =====
+/**
+ * @file array.h
+ * @author LazyPaws
+ * @brief Core definition of Array in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+#include "memory/gc_visitor.h"
+
+namespace meow::core::objects {
+    class ObjArray : public meow::core::MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using reference_t = value_t&;
+        using const_reference_t = const value_t&;
+        using container_t = std::vector<value_t>;
+
+        container_t elements_;
+    public:
+        // --- Constructors & destructor ---
+        ObjArray() = default;
+        explicit ObjArray(const container_t& elements) : elements_(elements) {}
+        explicit ObjArray(container_t&& elements) noexcept : elements_(std::move(elements)) {}
+        explicit ObjArray(std::initializer_list<value_t> elements) : elements_(elements) {}
+
+        // --- Rule of 5 ---
+        ObjArray(const ObjArray&) = delete;
+        ObjArray(ObjArray&&) = delete;
+        ObjArray& operator=(const ObjArray&) = delete;
+        ObjArray& operator=(ObjArray&&) = delete;
+        ~ObjArray() override = default;
+
+        // --- Iterator types ---
+        using iterator = container_t::iterator;
+        using const_iterator = container_t::const_iterator;
+        using reverse_iterator = container_t::reverse_iterator;
+        using const_reverse_iterator = container_t::const_reverse_iterator;
+
+        // --- Element access ---
+        
+        /// @brief Unchecked element access. For performance-critical code
+        [[nodiscard]] inline const_reference_t get(size_t index) const noexcept {
+            return elements_[index];
+        }
+        /// @brief Unchecked element modification. For performance-critical code
+        template <typename T> inline void set(size_t index, T&& value) noexcept {
+            elements_[index] = std::forward<T>(value);
+        }
+        /// @brief Checked element access. Throws if index is OOB
+        [[nodiscard]] inline const_reference_t at(size_t index) const {
+            return elements_.at(index);
+        }
+        inline const_reference_t operator[](size_t index) const noexcept { return elements_[index]; }
+        inline reference_t operator[](size_t index) noexcept { return elements_[index]; }
+        [[nodiscard]] inline const_reference_t front() const noexcept { return elements_.front(); }
+        [[nodiscard]] inline reference_t front() noexcept { return elements_.front(); }
+        [[nodiscard]] inline const_reference_t back() const noexcept { return elements_.back(); }
+        [[nodiscard]] inline reference_t back() noexcept { return elements_.back(); }
+
+        // --- Capacity ---
+        [[nodiscard]] inline size_t size() const noexcept { return elements_.size(); }
+        [[nodiscard]] inline bool empty() const noexcept { return elements_.empty(); }
+        [[nodiscard]] inline size_t capacity() const noexcept { return elements_.capacity(); }
+
+        // --- Modifiers ---
+        template <typename T> inline void push(T&& value) { 
+            elements_.emplace_back(std::forward<T>(value));
+        }
+        inline void pop() noexcept { elements_.pop_back(); }
+        template <typename... Args> inline void emplace(Args&&... args) {
+            elements_.emplace_back(std::forward<Args>(args)...);
+        }
+        inline void resize(size_t size) { elements_.resize(size); }
+        inline void reserve(size_t capacity) { elements_.reserve(capacity); }
+        inline void shrink() { elements_.shrink_to_fit(); }
+        inline void clear() { elements_.clear(); }
+
+        // --- Iterators ---
+        inline iterator begin() noexcept { return elements_.begin(); }
+        inline iterator end() noexcept { return elements_.end(); }
+        inline const_iterator begin() const noexcept { return elements_.begin(); }
+        inline const_iterator end() const noexcept { return elements_.end(); }
+        inline reverse_iterator rbegin() noexcept { return elements_.rbegin(); }
+        inline reverse_iterator rend() noexcept { return elements_.rend(); }
+        inline const_reverse_iterator rbegin() const noexcept { return elements_.rbegin(); }
+        inline const_reverse_iterator rend() const noexcept { return elements_.rend(); }
+    };
+}
+
+
+===== FILE: ./include/core/objects/function.h =====
+/**
+ * @file function.h
+ * @author LazyPaws
+ * @brief Core definition of Upvalue, Proto, Function in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+#include "memory/gc_visitor.h"
+#include "core/type.h"
+#include "runtime/chunk.h"
+
+namespace meow::core::objects {
+    struct UpvalueDesc {
+        bool is_local_;
+        size_t index_;
+        explicit UpvalueDesc(bool is_local = false, size_t index = 0) noexcept: is_local_(is_local), index_(index) {}
+    };
+
+    class ObjUpvalue : public MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using const_reference_t = const value_t&;
+
+        enum class State { OPEN, CLOSED };
+        State state_ = State::OPEN;
+        size_t index_ = 0;
+        Value closed_ = Null{};
+    public:
+        explicit ObjUpvalue(size_t index = 0) noexcept: index_(index) {}
+        inline void close(const_reference_t value) noexcept { 
+            closed_ = value; 
+            state_ = State::CLOSED; 
+        }
+        inline bool is_closed() const noexcept { return state_ == State::CLOSED; }
+        inline const_reference_t get_value() const noexcept { return closed_; }
+        inline size_t get_index() const noexcept { return index_; }
+    };
+
+    class ObjFunctionProto : public MeowObject {
+    private:
+        using chunk_t = meow::runtime::Chunk;
+        using string_t = meow::core::String;
+
+        size_t num_registers_;
+        size_t num_upvalues_;
+        string_t name_;
+        chunk_t chunk_;
+        std::vector<UpvalueDesc> upvalue_descs_;
+    public:
+        explicit ObjFunctionProto(size_t registers = 0, size_t upvalues = 0, string_t name = nullptr, chunk_t&& chunk) noexcept
+            : num_registers_(registers), num_upvalues_(upvalues), name_(name), chunk_(std::move(chunk)) {}
+
+        /// @brief Unchecked upvalue desc access. For performance-critical code
+        [[nodiscard]] inline const UpvalueDesc& get_desc(size_t index) const noexcept {
+            return upvalue_descs_[index];
+        }
+        /// @brief Checked upvalue desc access. For performence-critical code
+        [[nodiscard]] inline const UpvalueDesc& at_desc(size_t index) const {
+            return upvalue_descs_.at(index);
+        }
+        [[nodiscard]] inline size_t get_num_registers() const noexcept { return num_registers_; }
+        [[nodiscard]] inline size_t get_num_upvalues() const noexcept { return num_upvalues_; }
+        [[nodiscard]] inline string_t get_name() const noexcept { return name_; }
+        [[nodiscard]] inline const chunk_t& get_chunk() const noexcept { return chunk_; }
+        [[nodiscard]] inline size_t desc_size() const noexcept { return upvalue_descs_.size(); }
+    };
+
+    class ObjClosure : public MeowObject {
+    private:
+        using proto_t = meow::core::Proto;
+        using upvalue_t = meow::core::Upvalue;
+
+        proto_t proto_;
+        std::vector<upvalue_t> upvalues_;
+    public:
+        explicit ObjClosure(proto_t proto = nullptr) noexcept: proto_(proto), upvalues_(proto ? proto->get_num_upvalues() : 0) {}
+
+        [[nodiscard]] inline proto_t get_proto() const noexcept { return proto_; }
+        /// @brief Unchecked upvalue access. For performance-critical code
+        [[nodiscard]] inline upvalue_t get_upvalue(size_t index) const noexcept {
+            return upvalues_[index];
+        }
+        /// @brief Unchecked upvalue modification. For performance-critical code
+        [[nodiscard]] inline void set_upvalue(size_t index, upvalue_t upvalue) noexcept {
+            upvalues_[index] = upvalue;
+        }
+        /// @brief Checked upvalue access. Throws if index is OOB
+        [[nodiscard]] inline upvalue_t at_upvalue(size_t index) const {
+            return upvalues_.at(index);
+        }
+    };
+}
+
+
+===== FILE: ./include/core/objects/hash.h =====
+/**
+ * @file hash.h
+ * @author LazyPaws
+ * @brief Core definition of Hash in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+#include "memory/gc_visitor.h"
+#include "core/type.h"
+
+namespace meow::core::objects {
+    class ObjHash : public MeowObject {
+    private:
+        using key_t = meow::core::String;
+        using value_t = meow::core::Value;
+        using const_reference_t = const value_t&;
+        using map_t = std::unordered_map<key_t, value_t>;
+
+        map_t fields_;
+    public:
+        // --- Constructors & destructor---
+        ObjHash() = default;
+        explicit ObjHash(const map_t& fields): fields_(fields) {}
+        explicit ObjHash(map_t&& fields) noexcept: fields_(std::move(fields)) {}
+
+        // --- Rule of 5 ---
+        ObjHash(const ObjHash&) = delete;
+        ObjHash(ObjHash&&) = delete;
+        ObjHash& operator=(const ObjHash&) = delete;
+        ObjHash& operator=(ObjHash&&) = delete;
+        ~ObjHash() override = default;
+
+        // --- Iterator types ---
+        using iterator = map_t::iterator;
+        using const_iterator = map_t::const_iterator;
+
+        // --- Lookup ---
+
+        // Unchecked lookup. For performance-critical code
+        [[nodiscard]] inline const_reference_t get(key_t key) noexcept {
+            return fields_[key];
+        }
+        // Unchecked lookup/update. For performance-critical code
+        template <typename T> inline void set(key_t key, T&& value) noexcept {
+            fields_[key] = std::forward<T>(value);
+        }
+        // Checked lookup. Throws if key is not found
+        [[nodiscard]] inline const_reference_t at(key_t key) const {
+            return fields_.at(key);
+        }
+        [[nodiscard]] inline bool has(key_t key) const { return fields_.find(key) != fields_.end(); }
+
+        // --- Capacity ---
+        [[nodiscard]] inline size_t size() const noexcept { return fields_.size(); }
+        [[nodiscard]] inline bool empty() const noexcept { return fields_.empty(); }
+
+        // --- Iterators ---
+        inline iterator begin() noexcept { return fields_.begin(); }
+        inline iterator end() noexcept { return fields_.end(); }
+        inline const_iterator begin() const noexcept { return fields_.begin(); }
+        inline const_iterator end() const noexcept { return fields_.end();}
+    };
+
+}
+
+
+===== FILE: ./include/core/objects/module.h =====
+/**
+ * @file module.h
+ * @author LazyPaws
+ * @brief Core definition of Module in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+#include "memory/gc_visitor.h"
+#include "core/type.h"
+
+namespace meow::core::objects {
+    class ObjModule : public MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using const_reference_t = const value_t&;
+        using string_t = meow::core::String;
+        using proto_t = meow::core::Proto;
+        using module_map = std::unordered_map<String, value_t>;
+
+        enum class State { EXECUTING, EXECUTED };
+
+        module_map globals_;
+        module_map exports_;
+        string_t file_name_;
+        string_t file_path_;
+        proto_t main_proto_;
+
+        State state;
+    public:
+
+        explicit ObjModule(string_t file_name, string_t file_path, proto_t main_proto = nullptr) noexcept
+            : file_name_(file_name), file_path_(file_path), main_proto_(main_proto) {}
+
+        // --- Globals ---
+        [[nodiscard]] inline const_reference_t get_global(string_t name) noexcept { return globals_[name]; }
+        [[nodiscard]] inline void set_global(string_t name, const_reference_t value) noexcept { globals_[name] = value; } 
+        [[nodiscard]] inline bool has_global(string_t name) { return globals_.find(name) != globals_.end(); }
+
+        // --- Exports ---
+        [[nodiscard]] inline const_reference_t get_export(string_t name) noexcept { return exports_[name]; }
+        [[nodiscard]] inline void set_export(string_t name, const_reference_t value) noexcept { exports_[name] = value; }
+        [[nodiscard]] inline bool has_export(string_t name) { return exports_.find(name) != exports_.end(); }
+
+        // --- File info ---
+        inline string_t get_file_name() const noexcept { return file_name_; }
+        inline string_t get_file_path() const noexcept { return file_path_; }
+
+        // --- Main proto ---
+        inline proto_t get_main_proto() const noexcept { return main_proto_; }
+        inline void set_main_proto(proto_t proto) noexcept { main_proto_ = proto; }
+        inline bool is_has_main() const noexcept { return main_proto_ != nullptr; }
+
+        // --- Execution state ---
+        inline void set_execution() noexcept { state = State::EXECUTING; }
+        inline void set_executed() noexcept { state = State::EXECUTED;}
+        [[nodiscard]] inline bool is_executing() const noexcept { return state == State::EXECUTING; }
+        [[nodiscard]] inline bool is_executed() const noexcept { return state == State::EXECUTED; }
+    };
+}
+
+
+===== FILE: ./include/core/objects/native.h =====
+/**
+ * @file native.h
+ * @author LazyPaws
+ * @brief Core definition of NativeFn in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+
+namespace meow::vm { class MeowEngine; }
+
+namespace meow::core::objects {
+    class ObjNativeFunction : public MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using engine_t = meow::vm::MeowEngine;
+    public:
+        using arguments = const std::vector<value_t>&;
+        using native_fn_simple = std::function<value_t(arguments)>;
+        using native_fn_double = std::function<value_t(engine_t*, arguments)>;
+    private:
+        std::variant<native_fn_simple, native_fn_double> function_;
+    public:
+        explicit ObjNativeFunction(native_fn_simple f): function_(f) {}
+        explicit ObjNativeFunction(native_fn_double f): function_(f) {}
+
+        [[nodiscard]] inline value_t call(arguments args) {
+            if (auto p = std::get_if<native_fn_simple>(&function_)) {
+                return (*p)(args);
+            }
+            return value_t();
+        }
+        [[nodiscard]] inline value_t call(engine_t* engine, arguments args) {
+            if (auto p = std::get_if<native_fn_double>(&function_)) {
+                return (*p)(engine, args);
+            } else if (auto p = std::get_if<native_fn_simple>(&function_)) {
+                return (*p)(args);
+            }
+            return value_t();
+        }
+    };
+}
+
+
+===== FILE: ./include/core/objects/oop.h =====
+/**
+ * @file oop.h
+ * @author LazyPaws
+ * @brief Core definition of Class, Instance, BoundMethod in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/meow_object.h"
+#include "memory/gc_visitor.h"
+#include "core/type.h"
+
+namespace meow::core::objects {
+    class ObjClass : public MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using const_reference_t = const value_t&;
+        using string_t = meow::core::String;
+        using class_t = meow::core::Class;
+        using method_map = std::unordered_map<string_t, value_t>;
+
+        string_t name_;
+        class_t superclass_;
+        method_map methods_;
+    public:
+        explicit ObjClass(string_t name = nullptr) noexcept: name_(name) {}
+
+        // --- Metadata ---
+        [[nodiscard]] inline string_t get_name() const noexcept { return name_; }
+        [[nodiscard]] inline class_t get_super() const noexcept { return superclass_; }
+        inline void set_super(class_t super) noexcept { superclass_ = super; }
+
+        // --- Methods ---
+        [[nodiscard]] inline bool has_method(string_t name) const noexcept { return methods_.find(name) != methods_.end(); }
+        [[nodiscard]] inline const_reference_t get_method(string_t name) noexcept { return methods_[name]; }
+        inline void set_method(string_t name, const_reference_t value) noexcept { methods_[name] = value; }
+    };
+
+
+    class ObjInstance : public MeowObject {
+    private:
+        using value_t = meow::core::Value;
+        using const_reference_t = const value_t&;
+        using string_t = meow::core::String;
+        using class_t = meow::core::Class;
+        using field_map = std::unordered_map<string_t, value_t>;
+
+        class_t klass_;
+        field_map fields_;
+    public:
+        explicit ObjInstance(class_t k = nullptr) noexcept: klass_(k) {}
+
+        // --- Metadata ---
+        [[nodiscard]] inline class_t get_class() const noexcept { return klass_; }
+        inline void set_class(class_t klass) noexcept { klass_ = klass; }
+
+        // --- Fields ---
+        [[nodiscard]] inline const_reference_t get_field(string_t name) noexcept { return fields_[name];}
+        [[nodiscard]] inline void set_field(string_t name, const_reference_t value) noexcept { fields_[name] = value; }
+        [[nodiscard]] inline bool has_field(string_t name) const { return fields_.find(name) != fields_.end(); }
+    };
+
+    class ObjBoundMethod : public MeowObject {
+    private:
+        using instance_t = meow::core::Instance;
+        using function_t = meow::core::Function;
+
+        instance_t instance_;
+        function_t function_;
+    public:
+        explicit ObjBoundMethod(instance_t instance = nullptr, function_t function = nullptr) noexcept: instance_(instance), function_(function) {}
+
+        inline instance_t get_instance() const noexcept { return instance_; }
+        inline function_t get_function() const noexcept { return function_; }
+    };
+}
+
+
+===== FILE: ./include/core/objects/string.h =====
+/**
+ * @file string.h
+ * @author LazyPaws
+ * @brief Core definition of String in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/meow_object.h"
+
+namespace meow::core::objects {
+    class ObjString : public MeowObject {
+    private:
+        using string_t = std::string;
+        string_t data_;
+    public:
+        // --- Constructors & destructor ---
+        ObjString() = default;
+        explicit ObjString(const string_t& data): data_(data) {}
+        explicit ObjString(string_t&& data) noexcept: data_(std::move(data)) {}
+        explicit ObjString(const char* data): data_(data) {}
+
+        // --- Rule of 5 ---
+        ObjString(const ObjString&) = delete;
+        ObjString(ObjString&&) = delete;
+        ObjString& operator=(const ObjString&) = delete;
+        ObjString& operator=(ObjString&&) = delete;
+        ~ObjString() override = default;
+
+        // --- Iterator types ---
+        using const_iterator = string_t::const_iterator;
+        using const_reverse_iterator = string_t::const_reverse_iterator;
+
+        // --- Character access ---
+
+        /// @brief Unchecked character access. For performance-critical code
+        [[nodiscard]] inline char get(size_t index) const noexcept { return data_[index]; }
+        /// @brief Checked character access. Throws if index is OOB
+        [[nodiscard]] inline char at(size_t index) const { return data_.at(index); }
+
+        // --- String access ---
+        [[nodiscard]] inline const char* c_str() const noexcept { return data_.c_str(); }
+
+        // --- Capacity ---
+        [[nodiscard]] inline size_t size() const noexcept { return data_.size(); }
+        [[nodiscard]] inline bool empty() const noexcept { return data_.empty(); }
+
+        // --- Iterators ---
+        inline const_iterator begin() const noexcept { return data_.begin(); }
+        inline const_iterator end() const noexcept { return data_.end(); }
+        inline const_reverse_iterator rbegin() const noexcept { return data_.rbegin(); }
+        inline const_reverse_iterator rend() const noexcept { return data_.rend(); }
+    };
+}
+
+
+===== FILE: ./include/core/objects.h =====
+#pragma once
+
+#include "core/objects/array.h"
+#include "core/objects/string.h"
+#include "core/objects/hash.h"
+#include "core/objects/oop.h"
+#include "core/objects/function.h"
+#include "core/objects/native.h"
+#include "core/objects/module.h"
+#include "memory/gc_visitor.h"
+
+
+===== FILE: ./include/core/op_code.h =====
+/**
+ * @file op_code.h
+ * @author LazyPaws
+ * @brief Declaration of operating code in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+namespace meow::core {
+    enum class OpCode : unsigned char {
+        // --- Load/store ---
+        LOAD_CONST, LOAD_NULL, LOAD_TRUE, LOAD_FALSE, LOAD_INT, MOVE,
+        // --- Binary ---
+        ADD, SUB, MUL, DIV, MOD, POW, EQ, NEQ, GT, GE, LT, LE,
+        // --- Unary ---
+        NEG, NOT,
+        // --- Constant & variable
+        GET_GLOBAL, SET_GLOBAL, GET_UPVALUE, SET_UPVALUE, CLOSURE, CLOSE_UPVALUES,
+        // --- Control flow ---
+        JUMP, JUMP_IF_FALSE, JUMP_IF_TRUE, CALL, CALL_VOID, RETURN, HALT,
+        // --- Data structure ---
+        NEW_ARRAY, NEW_HASH, GET_INDEX, SET_INDEX, GET_KEYS, GET_VALUES,
+        // --- Classes & objexts ---
+        NEW_CLASS, NEW_INSTANCE, GET_PROP, SET_PROP, SET_METHOD, INHERIT, GET_SUPER,
+        // --- Bitwise ---
+        BIT_AND, BIT_OR, BIT_XOR, BIT_NOT, LSHIFT, RSHIFT,
+        // --- Try/catch ---
+        THROW, SETUP_TRY, POP_TRY,
+        // --- Module ---
+        IMPORT_MODULE, EXPORT, GET_EXPORT, IMPORT_ALL,
+        // --- Metadata ---
+        TOTAL_OPCODES
+    };
+}
+
+
+===== FILE: ./include/core/type.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "utils/types/variant.h"
+
+namespace meow::core {
+    struct MeowObject;
+
+    namespace objects {
+        struct ObjString;
+        struct ObjArray;
+        struct ObjHash;
+        struct ObjClass;
+        struct ObjInstance;
+        struct ObjBoundMethod;
+        struct ObjUpvalue;
+        struct ObjFunctionProto;
+        struct ObjNativeFunction;
+        struct ObjClosure;
+        struct ObjModule;
+    }
+    
+    using Array = objects::ObjArray*;
+    using String = const objects::ObjString*;
+    using Hash = objects::ObjHash*;
+
+    using Instance = objects::ObjInstance*;
+    using Class = objects::ObjClass*;
+    using BoundMethod = objects::ObjBoundMethod*;
+    using Upvalue = objects::ObjUpvalue*;
+    using Proto = objects::ObjFunctionProto*;
+    using Function = objects::ObjClosure*;
+    using NativeFn = objects::ObjNativeFunction*;
+    using Module = objects::ObjModule*;
+
+    using Null = std::monostate;
+    using Bool = bool;
+    using Int = int64_t;
+    using Real = double;
+    using Object = meow::utils::Variant<
+        Array, String, Hash,
+        Instance, Class, BoundMethod,
+        Upvalue, Proto, Function,
+        NativeFn, Module
+    >;
+
+    enum class ValueType : uint8_t {
+        Null, Int, Real, Bool, String, Array, Object, Upvalue, Function, Class, Instance, BoundMethod, Proto, NativeFn, TotalValueTypes
+    };
+}
+
+
+===== FILE: ./include/core/value.h =====
+
+/**
+ * @file value.h
+ * @author LazyPaws
+ * @brief Core definition of Value in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "common/pch.h"
+#include "core/type.h"
+#include "utils/types/variant.h"
+
+namespace meow::core { struct MeowObject; }
+
+namespace meow::core {
+    class Value {
+    private:
+        using BaseValue = meow::utils::Variant<
+            Null, Bool, Int, Real, Object
+        >;
+        BaseValue data_;
+    public:
+        // --- Constructors ---
+        Value(): data_(Null{}) {}
+        Value(std::monostate): data_(Null{}) {}
+        Value(bool b): data_(b) {}
+        Value(int64_t i): data_(i) {}
+        Value(int i): data_(static_cast<int64_t>(i)) {}
+        Value(double r): data_(r) {}
+
+        [[nodiscard]] inline bool is_null() const noexcept { return data_.holds<Null>(); }
+        [[nodiscard]] inline bool is_bool() const noexcept { return data_.holds<Bool>(); }
+        [[nodiscard]] inline bool is_int() const noexcept { return data_.holds<Int>(); }
+        [[nodiscard]] inline bool is_real() const noexcept { return data_.holds<Real>(); }
+        [[nodiscard]] inline bool is_array() const noexcept { return data_.holds<Array>(); }
+        [[nodiscard]] inline bool is_string() const noexcept { return data_.holds<String>(); }
+        [[nodiscard]] inline bool is_hash() const noexcept { return data_.holds<Hash>(); }
+        [[nodiscard]] inline bool is_upvalue() const noexcept { return data_.holds<Upvalue>(); }
+        [[nodiscard]] inline bool is_proto() const noexcept { return data_.holds<Proto>(); }
+        [[nodiscard]] inline bool is_function() const noexcept { return data_.holds<Function>(); }
+        [[nodiscard]] inline bool is_native_fn() const noexcept { return data_.holds<NativeFn>(); }
+        [[nodiscard]] inline bool is_class() const noexcept { return data_.holds<Class>(); }
+        [[nodiscard]] inline bool is_instance() const noexcept { return data_.holds<Instance>(); }
+        [[nodiscard]] inline bool is_bound_method() const noexcept { return data_.holds<BoundMethod>(); }
+        [[nodiscard]] inline bool is_module() const noexcept { return data_.holds<Module>(); }
+        [[nodiscard]] inline bool is_object() const noexcept { return data_.holds<Object>()}
+
+        [[nodiscard]] inline bool as_bool() const { return data_.get<Bool>(); }
+        [[nodiscard]] inline int64_t as_int() const { return data_.get<Int>(); }
+        [[nodiscard]] inline double as_real() const { return data_.get<Real>(); }
+        [[nodiscard]] inline Array as_array() const { return data_.get<Array>(); }
+        [[nodiscard]] inline String as_string() const { return data_.get<String>(); }
+        [[nodiscard]] inline Hash as_hash() const { return data_.get<Hash>(); }
+        [[nodiscard]] inline Upvalue as_upvalue() const { return data_.get<Upvalue>(); }
+        [[nodiscard]] inline Proto as_proto() const { return data_.get<Proto>(); }
+        [[nodiscard]] inline Function as_function() const { return data_.get<Function>(); }
+        [[nodiscard]] inline NativeFn as_native_fn() const { return data_.get<NativeFn>(); }
+        [[nodiscard]] inline Class as_class() const { return data_.get<Class>(); }
+        [[nodiscard]] inline Instance as_instance() const { return data_.get<Instance>(); }
+        [[nodiscard]] inline BoundMethod as_bound_method() const { return data_.get<BoundMethod>(); }
+        [[nodiscard]] inline Module as_module() const { return data_.get<Module>(); }
+        [[nodiscard]] inline meow::core::MeowObject* as_object() const {
+            meow::core::MeowObject* object = nullptr;
+            std::visit([&object](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_pointer_v<T> && std::is_base_of_v<meow::core::MeowObject, std::remove_pointer_t<T>>) {
+                    object = arg;
+                }
+            }, data_);
+            return object;
+        }
+        [[nodiscard]] inline meow::core::MeowObject* as_object() const {
+            return std::visit([](auto&& arg) {
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_pointer_v<T>) return static_cast<MeowObject*>(arg);
+                return nullptr;
+            }, data_);
+        }
+
+        inline const bool* as_if_bool() const noexcept { return std::get_if<Bool>(&data_); }
+        inline const int64_t* as_if_int() const noexcept { return std::get_if<Int>(&data_); }
+        inline const double* as_if_real() const noexcept { return std::get_if<Real>(&data_); }
+        inline meow::core::MeowObject* const* as_if_object() const noexcept {
+            static meow::core::MeowObject* object = nullptr;
+            if (is_object()) {
+                object = as_object();
+                return &object;
+            }
+            return nullptr;
+        }
+
+        inline bool* as_if_bool() noexcept { return std::get_if<Bool>(&data_); }
+        inline int64_t* as_if_int() noexcept { return std::get_if<Int>(&data_); }
+        inline double* as_if_real() noexcept { return std::get_if<Real>(&data_); }
+        inline meow::core::MeowObject** as_if_object() noexcept {
+            static meow::core::MeowObject* object = nullptr;
+            if (is_object()) {
+                object = as_object();
+                return &object;
+            }
+            return nullptr;
+        }
+    };
+}
+
+
+===== FILE: ./include/memory/garbage_collector.h =====
+#pragma once
+
+#include <cstddef>
+
+namespace meow::core { struct MeowObject; }
+
+namespace meow::memory {
+    /**
+     * @class GarbageCollector
+     * @brief Dọn dẹp các object không còn được sử dụng, tránh memory leak
+     */
+    class GarbageCollector {
+    public:
+        virtual ~GarbageCollector() = default;
+        
+        /**
+         * @brief Đăng kí một object để GC quản lí
+         * @param[in] object Object cần được GC quản li
+         */
+        virtual void register_object(const meow::core::MeowObject* object) = 0;
+        
+        /**
+         * @brief Dọn dẹp các object không còn dược sử dụng
+         */
+        virtual size_t collect() noexcept = 0;
+    };
+}
+
+
+===== FILE: ./include/memory/gc_disable_guard.h =====
+#pragma once
+
+#include "memory/memory_manager.h"
+
+namespace meow::memory {
+    class GCDisableGuard {
+    private:
+        MemoryManager* heap_;
+    public:
+        explicit GCDisableGuard(MemoryManager* heap) noexcept : heap_(heap) { if (heap_) heap_->disable_gc(); }
+        GCDisableGuard(const GCDisableGuard&) = delete;
+        GCDisableGuard& operator=(const GCDisableGuard&) = delete;
+        GCDisableGuard(GCDisableGuard&&) = delete;
+        GCDisableGuard& operator=(GCDisableGuard&&) = delete;
+        ~GCDisableGuard() noexcept { if (heap_) heap_->enable_gc(); }
+    };
+}
+
+
+===== FILE: ./include/memory/gc_visitor.h =====
+#pragma once
+
+namespace meow::core { class Value; struct MeowObject; }
+
+namespace meow::memory {
+    struct GCVisitor {
+        virtual ~GCVisitor() = default;
+        virtual void visit_value(const meow::core::Value& value) noexcept = 0;
+        virtual void visit_object(const meow::core::MeowObject* object) noexcept = 0;
+    };
+}
+
+
+===== FILE: ./include/memory/mark_sweep_gc.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "memory/gc_visitor.h"
+#include "memory/garbage_collector.h"
+
+namespace meow::runtime {
+    struct ExecutionContext;
+    struct BuiltinRegistry;
+}
+
+namespace meow::memory {
+    struct GCMetadata { bool is_marked_ = false; };
+
+    class MarkSweepGC : public GarbageCollector, public GCVisitor {
+    private:
+        std::unordered_map<const meow::core::MeowObject*, GCMetadata> metadata_;
+        meow::runtime::ExecutionContext* context_ = nullptr;
+        meow::runtime::BuiltinRegistry* builtins_ = nullptr;
+    public:
+        explicit MarkSweepGC(meow::runtime::ExecutionContext* context, meow::runtime::BuiltinRegistry* builtins) noexcept: context_(context), builtins_(builtins) {}
+        ~MarkSweepGC() override;
+
+        // -- Collector ---
+        void register_object(const meow::core::MeowObject* object) override;
+        size_t collect() noexcept override;
+
+        // --- Visitor ---
+        void visit_value(const meow::core::Value& value) noexcept override;
+        void visit_object(const meow::core::MeowObject* object) noexcept override;
+    private:
+        void mark(const meow::core::MeowObject* object);
+    };
+}
+
+
+===== FILE: ./include/memory/memory_manager.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "memory/garbage_collector.h"
+#include "core/objects/native.h"
+#include "core/type.h"
+
+namespace meow::memory {
+    class MemoryManager {
+    private:
+        std::unique_ptr<meow::memory::GarbageCollector> gc_;
+        std::unordered_map<std::string, meow::core::String> string_pool_;
+
+        size_t gc_threshold_;
+        size_t object_allocated_;
+        bool gc_enabled_ = true;
+
+        template<typename T, typename... Args>
+        [[nodiscard]] T* new_object(Args&&... args) noexcept {
+            if (object_allocated_ >= gc_threshold_ && gc_enabled_) {
+                collect();
+                gc_threshold_ *= 2;
+            }
+            T* newObj = new T(std::forward<Args>(args)...);
+            gc->register_object(static_cast<meow::core::MeowObject*>(newObj));
+            ++object_allocated_;
+            return newObj;
+        }
+    public:
+        explicit MemoryManager(std::unique_ptr<meow::memory::GarbageCollector> gc);
+
+        meow::core::Array new_array(const std::vector<meow::core::Value>& elements = {});
+        meow::core::String new_string(const std::string& string);
+        meow::core::String new_string(const char* chars, size_t length);
+        meow::core::Hash new_hash(const std::unordered_map<meow::core::String, meow::core::Value>& fields = {});
+        meow::core::Upvalue new_upvalue(size_t index);
+        meow::core::Proto new_proto(size_t registers, size_t upvalues, meow::core::String name, meow::runtime::Chunk&& chunk);
+        meow::core::Function new_function(meow::core::Proto proto);
+        meow::core::Module new_module(meow::core::String file_name, meow::core::String file_path, meow::core::Proto main_proto = nullptr);
+        meow::core::NativeFn new_native(meow::core::objects::ObjNativeFunction::native_fn_simple fn);
+        meow::core::NativeFn new_native(meow::core::objects::ObjNativeFunction::native_fn_double fn);
+        meow::core::Class new_class(meow::core::String name = nullptr);
+        meow::core::Instance new_instance(meow::core::Class klass);
+        meow::core::BoundMethod new_bound_method(meow::core::Instance instance, meow::core::Function function);
+
+        inline void enable_gc() noexcept { gc_enabled_ = true; }
+        inline void disable_gc() noexcept { gc_enabled_ = false; }
+        inline void collect() noexcept { object_allocated_ = gc_->collect(); }
+    };
+}
+
+
+===== FILE: ./include/module/module_manager.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "core/objects/module.h"
+#include "core/type.h"
+
+namespace meow::vm { class MeowEngine; }
+namespace meow::memory { class MemoryManager; }
+
+namespace meow::module {
+    class ModuleManager {
+    public:
+        meow::core::Module load_module(meow::core::String module_path, meow::core::String importer_path, meow::memory::MemoryManager* heap, meow::vm::MeowEngine* engine);
+
+        inline void reset_module_cache() noexcept {
+            module_cache_.clear();
+        }
+
+        inline void add_cache(meow::core::String name, const meow::core::Module& mod) {
+            module_cache_[name] = mod;
+        }
+    private:
+        std::unordered_map<meow::core::String, meow::core::Module> module_cache_;
+        meow::core::String entry_path_;
+
+        meow::vm::MeowEngine* engine_;
+        meow::memory::MemoryManager* heap_;
+    };
+}
+
+
+===== FILE: ./include/runtime/builtin_registry.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/type.h"
+#include "core/objects/string.h"
+#include "memory/gc_visitor.h"
+
+namespace meow::runtime {
+    struct BuiltinRegistry {
+        std::unordered_map<meow::core::String, std::unordered_map<meow::core::String, meow::core::Value>> methods_;
+        std::unordered_map<meow::core::String, std::unordered_map<meow::core::String, meow::core::Value>> getters_;
+
+        inline void trace(meow::memory::GCVisitor& visitor) const noexcept {
+            for (const auto& [name, method] : methods_) {
+                visitor.visit_object(name);
+                for (const auto& [key, value] : method) {
+                    visitor.visit_object(key);
+                    visitor.visit_value(value);
+                }
+            }
+
+            for (const auto& [name, getter] : getters_) {
+                visitor.visit_object(name);
+                for (const auto& [key, value] : getter) {
+                    visitor.visit_object(key);
+                    visitor.visit_value(value);
+                }
+            }
+        }
+    };
+}
+
+
+===== FILE: ./include/runtime/chunk.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+
+namespace meow::runtime {
+    class Chunk {
+    public:
+        Chunk() = default;
+
+        inline void write_byte(uint8_t byte) {
+            code_.push_back(byte);
+        }
+        
+        inline void write_short(uint16_t value) {
+            if (value < 128) {
+                code_.push_back(static_cast<uint8_t>(value));
+            } else {
+
+                // Vis dụ 1 byte có 0b01010101
+                // 0x80 = 0b100 0b0000
+                // 0x7F = 0b0111 0b1111
+
+                // Vậy, khi dùng value & 0x7F thì ta sẽ lấy 7 bit đầu
+                // Dùng thêm value | 0x80 tức là bật bit số 8 thành 1
+                code_.push_back(static_cast<uint8_t>((value & 0x7F) | 0x80));
+
+                // Lấy 7 bit rồi thì dịch 7 bit để ăn nốt mấy bit còn lại
+                // Thực ra không hẳn 7 bit còn lại
+                // Nhưng mà theo cách lưu byte này thì chỉ lưu được 7 bit dữ liệu thật
+                code_.push_back(static_cast<uint8_t>(value >> 7));
+            }
+        }
+
+        inline void write_address(uint16_t address) {
+            // Viết theo dạng little-endian
+            // Tưởng tượng có hai byte 0x1234 (vì mỗi byte có 8 bit)
+
+            // Ta có hai byte là 0x12, 0x34
+            // Nếu là big-endian thì thêm byte y như thứ tự viết hexa
+            // Vì hexa dựa trên big-endian
+            // Tức là viết 0x12 - byte cao trước, rồi viết 0x34- byte thấp
+            // Nếu là little-endian thì viết ngược lại
+            // Viết 0x34 trước, rồi viết 0x12
+
+            code_.push_back(static_cast<uint8_t>(address & 0xFF)); // Lấy trọn 1 byte thấp rồi đẩy vào code
+            code_.push_back(static_cast<uint8_t>((address >> 8) & 0xFF)); // Dịch sang phải để lấy nốt 1 byte còn lại
+            // Ví dụ cụ thể với 0x1234
+            // Khi dùng address & 0xFF thì tức là ta lấy 1 byte thấp
+            // Tức là lấy 0x1234 & 0xFF, với 0xFF để lấy trọn 1 byte thấp là 0x34
+            // Khi dùng address >> 8, thực chất, address chỉ còn 0x0012
+            // Khi này, ta dùng address & 0xFF sẽ lấy được byte cao là 0x12
+
+            // Máy tác giả dùng là little-endian nên dùng vậy thôi
+            // Máy bạn nếu dùng big-endian có thể đảo ngược quá trình lại
+        }
+
+        // --- Code buffer ---
+        [[nodiscard]] inline const uint8_t* get_code() const noexcept {
+            return code_.data();
+        }
+        [[nodiscard]] inline size_t get_code_size() const noexcept {  return code_.size();  }
+        [[nodiscard]] inline bool is_code_empty() const noexcept { return code_.empty(); }
+
+        // --- Constant pool ---
+        [[nodiscard]] inline size_t get_pool_size() const noexcept { return constant_pool_.size(); }
+        [[nodiscard]] inline bool is_pool_empty() const noexcept { return constant_pool_.empty(); }
+        [[nodiscard]] inline size_t add_constant(meow::core::Value value) {
+            constant_pool_.push_back(value);
+            return constant_pool_.size() - 1;
+        }
+        [[nodiscard]] inline meow::core::Value get_constant(size_t index) const noexcept { return constant_pool_[index]; }
+    private:
+        std::vector<uint8_t> code_;
+        std::vector<meow::core::Value> constant_pool_;
+    };
+}
+
+
+===== FILE: ./include/runtime/execution_context.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/objects/function.h"
+#include "memory/gc_visitor.h"
+
+namespace meow::runtime {
+    struct CallFrame {
+        meow::core::Function function_;
+        size_t start_reg_;
+        size_t ret_reg_;
+        const uint8_t* ip_;
+        CallFrame(meow::core::Function function, size_t start_reg, size_t ret_reg, const uint8_t* ip)
+            : function_(function), start_reg_(start_reg), ret_reg_(ret_reg), ip_(ip) {}
+    };
+
+    struct ExceptionHandler {
+        size_t catch_ip_;
+        size_t frame_depth_;
+        size_t stack_depth_;
+        ExceptionHandler(size_t catch_ip = 0, size_t frame_depth = 0, size_t stack_depth = 0) 
+            : catch_ip_(catch_ip), frame_depth_(frame_depth), stack_depth_(stack_depth) {}
+    };
+
+    struct ExecutionContext {
+        std::vector<CallFrame> call_stack_;
+        std::vector<meow::core::Value> registers_;
+        std::vector<meow::core::Upvalue> open_upvalues_;
+        std::vector<ExceptionHandler> execption_handlers_;
+
+        size_t current_base_ = 0;
+        CallFrame* current_frame_ = nullptr;
+
+        inline void reset() noexcept {
+            call_stack_.clear();
+            registers_.clear();
+            open_upvalues_.clear();
+            execption_handlers_.clear();
+        }
+
+        inline void trace(meow::memory::GCVisitor& visitor) const noexcept {
+            for (const auto& reg : registers_) {
+                visitor.visit_value(reg);
+            }
+            for (const auto& upvalue : open_upvalues_) {
+                visitor.visit_object(upvalue);
+            }
+        }
+    };
+}
+
+
+===== FILE: ./include/runtime/operator_dispatcher.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "core/value.h"
+#include "core/op_code.h"
+
+namespace meow::memory { class MemoryManager; }
+
+namespace meow::runtime {
+    constexpr size_t NUM_VALUE_TYPES = static_cast<size_t>(meow::core::ValueType::TotalValueTypes); 
+    constexpr size_t NUM_OPCODES = static_cast<size_t>(meow::core::OpCode::TOTAL_OPCODES);
+
+    inline meow::core::ValueType get_value_type(const meow::core::Value& value) noexcept {
+        if (value.is_null()) return meow::core::ValueType::Null;
+        if (value.is_int()) return meow::core::ValueType::Int;
+        if (value.is_real()) return meow::core::ValueType::Real;
+        if (value.is_object()) return meow::core::ValueType::Bool;
+        return meow::core::ValueType::Null;
+    }
+
+    class OperatorDispatcher {
+    private:
+        using BinaryOpFunction = meow::core::Value(*)(const meow::core::Value&, const meow::core::Value&);
+        using UnaryOpFunction = meow::core::Value(*)(const meow::core::Value&);
+
+        meow::memory::MemoryManager* heap_;
+        BinaryOpFunction binary_dispatch_table_[NUM_OPCODES][NUM_VALUE_TYPES][NUM_VALUE_TYPES];
+        UnaryOpFunction unary_dispatch_table_[NUM_OPCODES][NUM_VALUE_TYPES];
+    public:
+        explicit OperatorDispatcher(meow::memory::MemoryManager* heap) noexcept;
+
+        [[nodiscard]] inline const BinaryOpFunction* find(meow::core::OpCode op_code, const meow::core::Value& left, const meow::core::Value& right) const noexcept {
+            auto left_type = get_value_type(left);
+            auto right_type = get_value_type(right);
+            const BinaryOpFunction* function = &binary_dispatch_table_[static_cast<size_t>(op_code)][static_cast<size_t>(static_cast<size_t>(left_type))][static_cast<size_t>(right_type)];
+            return (*function) ? function : nullptr;
+        }
+
+        [[nodiscard]] inline const UnaryOpFunction* find(meow::core::OpCode op_code, const meow::core::Value& right) const noexcept {
+            auto right_type = get_value_type(right);
+            const UnaryOpFunction* function = &unary_dispatch_table_[static_cast<size_t>(op_code)][static_cast<size_t>(right_type)];
+            return (*function) ? function : nullptr;
+        }
+    };
+}
+
+
+===== FILE: ./include/utils/container/hash_table.h =====
+/**
+ * @file hash_table.h
+ * @author LazyPaws
+ * @brief An util for Hash Table in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "utils/vector.h"
+#include "utils/list.h"
+#include "utils/optional.h"
+#include "utils/pair.h"
+#include "utils/hash.h"
+
+namespace meow::utils {
+    template <typename T, typename U>
+    class HashTable {
+    private:
+        using value_type = U;
+        using key_t = T;
+        using const_value_reference_t = const value_type&;
+        using const_key_reference_t = const key_t&;
+        using pair_type = Pair<key_t, value_type>;
+        using table_t = utils::Vector<utils::List<utils::Pair<key_t, value_type>>>;
+
+        table_t table_;
+    public:
+        HashTable(size_t new_size = 10, const_value_reference_t temp_value = value_type()) noexcept: table_(new_size) {
+            table_.resize(new_size);
+        }
+        inline void insert(const_key_reference_t key, const_value_reference_t value) noexcept {
+            size_t index = hash(key, table_.size());
+            table_[index].push_front(pair_type(key, value));
+        }
+        [[nodiscard]] inline utils::Optional<const_value_reference_t> get(const_key_reference_t key) noexcept {
+            size_t index = hash(key, table_.size());
+            for (auto it = table_[index].begin(); it != table_[index].end(); it = it->next()) {
+                if (it->data_.first_ == key) return it->data_.second_;
+            }
+            return temp_value_;
+        }
+    };
+}
+
+
+===== FILE: ./include/utils/container/list.h =====
+/**
+ * @file list.h
+ * @author LazyPaws
+ * @brief An util for List in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+#include "utils/node.h"
+
+namespace meow::utils {
+    template <typename T>
+    class List {
+    private:
+        using value_t = T;
+        using const_reference_t = const value_t&;
+        using move_t = value_t&&;
+        using node_t = utils::Node<value_t>;
+        using node_pointer_t = node_t*;
+        using const_node_pointer_t = const node_t*;
+
+        // --- Metadata ---
+        node_pointer_t head_;
+        node_pointer_t tail_;
+        size_t size_ = 0;
+
+        // --- Helpers ---
+        inline void copy_from(const List& other) noexcept {
+            tail_ = head_ = nullptr;
+            size_ = 0;
+            const_node_pointer_t current = other.head_;
+            while (current) {
+                push(current->data_);
+                current = current->next_;
+            }
+        }
+        inline void move_from(List&& other) noexcept {
+            head_ = std::move(other.head_);
+            tail_ = std::move(other.tail_);
+            size_ = std::move(other.size_);
+            other.tail_ = other.head_ = nullptr;
+            other.size_ = 0;
+        }
+    public:
+        // --- Constructors & destructor
+        List() noexcept: head_(nullptr), tail_(nullptr) {}
+        explicit List(const List& other) noexcept { copy_from(other); }
+        explicit List(List&& other) noexcept { move_from(std::move(other)); }
+        inline List& operator=(const List& other) {
+            if (this == &other) return *this;
+            copy_from(other);
+            return *this;
+        }
+        inline List& operator=(List&& other) noexcept { move_from(std::move(other)); return *this; }
+        ~List() noexcept { clear(); }
+        
+        // --- Modifiers ---
+        inline void push(const_reference_t value) noexcept {
+            node_pointer_t new_node = new node_t(value);
+            if (head_) {
+                tail_->next_ = new_node;
+                tail_ = new_node;
+            } else {
+                tail_ = head_ = new_node;
+            }
+            ++size_;
+        }
+        inline void push(move_t value) noexcept {
+            node_pointer_t new_node = new node_t(std::move(value));
+            if (head_) {
+                tail_->next_ = new_node;
+                tail_ = new_node;
+            } else {
+                tail_ = head_ = new_node;
+            }
+            ++size_;
+        }
+        inline void push_front(const_reference_t value) noexcept {
+            node_pointer_t new_node = new node_t(value);
+            if (head_) {
+                new_node->next_ = head_;
+                head_ = new_node;
+            } else {
+                tail_ = head_ = new_node;
+            }
+            ++size_;
+        }
+
+        // --- Elements ---
+        [[nodiscard]] inline const_node_pointer_t find(const_reference_t value) const noexcept {
+            const_node_pointer_t current = head_;
+            while (current) {
+                if (current->data_ == value) return current;
+                current = current->next_;
+            }
+            return nullptr;
+        }
+        [[nodiscard]] inline size_t count(const_reference_t value) const noexcept {
+            size_t counter = 0;
+            const_node_pointer_t current = head_;
+            while (current) {
+                if (current->data_ == value) ++counter;
+                current = current->next_; 
+            }
+            return counter;
+        }
+        [[nodiscard]] inline bool has(const_reference_t value) const noexcept { return find(value); }
+        [[nodiscard]] inline const_node_pointer_t begin() const noexcept { return head_; }
+        [[nodiscard]] inline const_node_pointer_t end() const noexcept { return nullptr; }
+        [[nodiscard]] inline const_node_pointer_t head() const noexcept { return head_; }
+        [[nodiscard]] inline const_node_pointer_t tail() const noexcept { return tail_; }
+
+        // --- Capacity ---
+        [[nodiscard]] inline size_t size() const noexcept { return size_; }
+        [[nodiscard]] inline bool empty() const noexcept { return size_ == 0; }
+
+        // --- Destruction ---
+        inline void clear() noexcept {
+            node_pointer_t current = head_;
+            while (current) {
+                node_pointer_t temp = current->next_;
+                delete current;
+                current = temp;
+            }
+            tail_ = head_ = nullptr;
+            size_ = 0;
+        }
+
+        // --- Utilities ---
+        [[nodiscard]] inline std::string str() const noexcept {
+            std::ostringstream os;
+            if (!head_) return "";
+            node_pointer_t current = head_;
+
+            while (current) {
+                os << current->data_ << " ";
+                current = current->next_;
+            }
+
+            std::string output = os.str();
+            if (output.back() == ' ') output.pop_back();
+
+            return output;
+        }
+    };
+
+}
+
+
+===== FILE: ./include/utils/container/node.h =====
+#pragma once
+
+namespace meow::utils {
+    template <typename T>
+    struct Node {
+        // --- Metadata ---
+        T data_;
+        Node<T>* next_;
+
+        // --- Constructors ---
+        explicit Node(const T& value, Node<T>* next = nullptr) noexcept: data_(value), next_(next) {}
+        explicit Node(T&& value, Node<T>* next = nullptr) noexcept: data_(std::move(value)), next_(next) {}
+
+        [[nodiscard]] inline const T& data() const noexcept { return data_; }
+        [[nodiscard]] inline T& data() noexcept { return data_; }
+        [[nodiscard]] inline const Node<T>* next() const noexcept { return next_; }
+        [[nodiscard]] inline Node<T>* next() noexcept { return next_; }
+    };
+}
+
+
+
+===== FILE: ./include/utils/container/pair.h =====
+/**
+ * @file pair.h
+ * @author LazyPaws
+ * @brief An util for Pair in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+template <typename T, typename U>
+struct Pair {
+    T first_;
+    U second_;
+    Pair(const T& first, const U& second): first_(first), second_(second) {}
+    Pair(T&& first, U&& second): first_(std::move(first)), second_(std::move(second)) {}
+};
+
+
+===== FILE: ./include/utils/container/vector.h =====
+/**
+ * @file vector.h
+ * @author LazyPaws
+ * @brief An util for Dynamic Array (Vector) in TrangMeo
+ * @copyright Copyright (c) 2025 LazyPaws
+ * @license All rights reserved. Unauthorized copying of this file, in any form or medium, is strictly prohibited
+ */
+
+#pragma once
+
+namespace meow::utils {
+    template <typename T>
+    class Vector {
+    private:
+        using value_t = T;
+        using reference_t = value_t&;
+        using move_t = value_t&&;
+        using pointer_t = value_t*;
+        using const_reference_t = const value_t&;
+        using const_pointer_t = const value_t*;
+
+        // --- Metadata ---
+        pointer_t data_;
+        size_t size_;
+        size_t capacity_;
+
+        // --- Helpers ---
+        inline void grow(size_t new_capacity) noexcept {
+            pointer_t temp_data = new value_t[new_capacity];
+            for (size_t i = 0; i < size_; ++i) {
+                temp_data[i] = std::move(data_[i]);
+            }
+            delete[] data_;
+            data_ = temp_data;
+            capacity_ = new_capacity;
+        }
+        inline void copy_from(const Vector& other) noexcept {
+            size_ = other.size_;
+            capacity_ = other.capacity_;
+            delete[] data_; 
+            data_ = new value_t[capacity_];
+            for (size_t i = 0; i < size_; ++i) {
+                data_[i] = other.data_[i];
+            }
+        }
+        inline void move_from(Vector&& other) noexcept {
+            delete[] data_;
+            data_ = other.data_;
+            size_ = other.size_;
+            capacity_ = other.capacity_;
+            
+            other.data_ = nullptr;
+            other.size_ = other.capacity_ = 0;
+        }
+    public:
+        // --- Constructors & destructor
+        Vector(size_t new_capacity = 10) noexcept: data_(new value_t[new_capacity]()), size_(0), capacity_(new_capacity) {}
+        explicit Vector(const Vector& other) noexcept: data_(new value_t[other.capacity_]), size_(other.size_), capacity_(other.capacity_) {
+            for (size_t i = 0; i < size_; ++i) {
+                data_[i] = other.data_[i];
+            }
+        }
+        explicit Vector(Vector&& other) noexcept { move_from(std::move(other)); }
+        inline Vector& operator=(const Vector& other) noexcept { copy_from(other); return *this; }
+        inline Vector& operator=(Vector&& other) noexcept { move_from(std::move(other)); return *this; }
+        ~Vector() noexcept { delete[] data_;}
+
+        // --- Element access ---
+        [[nodiscard]] inline const_reference_t get(size_t index) const noexcept { return data_[index];}
+        [[nodiscard]] inline reference_t get(size_t index) noexcept { return data_[index]; }
+        [[nodiscard]] inline const_reference_t operator[](size_t index) const noexcept { return data_[index]; }
+        [[nodiscard]] inline reference_t operator[](size_t index) noexcept { return data_[index]; }
+
+        // --- Data access ---
+        [[nodiscard]] inline const_pointer_t data() const noexcept { return data_; }
+        [[nodiscard]] inline pointer_t data() noexcept { return data_; }
+
+        // --- Capacity ---
+        [[nodiscard]] inline size_t size() const noexcept { return size_; }
+        [[nodiscard]] inline size_t capacity() const noexcept { return capacity_; }
+
+        // --- Modifiers ---
+        inline void push(const_reference_t value) noexcept {
+            if (size_ >= capacity_) grow(capacity_ * 2);
+            data_[size_] = value;
+            ++size_;
+        }
+        inline void push(move_t value) noexcept {
+            if (size >= capacity_) grow(capacity * 2);
+            data_[size_] = std::move(value);
+            ++size_;s
+        }
+        inline void pop() noexcept { if (size_ > 0) --size_; }
+        inline void resize(size_t new_size, const_reference_t temp_value = value_t()) noexcept {
+            if (new_size > size_) {
+                reserve(new_size);
+                for (size_t i = size_; i < new_size; ++i) {
+                    data_[i] = temp_value;
+                }
+                size_ = new_size;
+            } else {
+                size_ = new_size;
+            }
+        }
+        inline void reserve(size_t new_capacity) noexcept { grow(new_capacity); }
+    };
+}
+
+
+===== FILE: ./include/utils/misc/hash.h =====
+#pragma once
+
+#include "common/pch.h"
+
+[[nodiscard]] inline size_t hash(size_t number, size_t bucket_count = 10) noexcept {
+    return number % bucket_count;
+}
+
+
+===== FILE: ./include/utils/string/unicode.h =====
+// #pragma once
+
+// #include "common/pch.h"
+
+// namespace meow::utils {
+//     inline static std::u32string utf8_to_utf32(const std::string& s) noexcept {
+//         std::u32string out;
+//         const unsigned char* bytes = reinterpret_cast<const unsigned char*>(s.data());
+//         size_t n = s.size(), i = 0;
+//         while (i < n) {
+//             unsigned char b = bytes[i];
+//             if (b <= 0x7F) {
+//                 out.push_back(b); i += 1;
+//             } else if ((b >> 5) == 0x6 && i+1 < n) {
+//                 out.push_back(static_cast<char32_t>(((b & 0x1F) << 6) | (bytes[i+1] & 0x3F)));
+//                 i += 2;
+//             } else if ((b >> 4) == 0xE && i+2 < n) {
+//                 out.push_back(static_cast<char32_t>(((b & 0x0F) << 12) | ((bytes[i+1] & 0x3F) << 6) | (bytes[i+2] & 0x3F)));
+//                 i += 3;
+//             } else if ((b >> 3) == 0x1E && i+3 < n) {
+//                 out.push_back(static_cast<char32_t>(((b & 0x07) << 18) | ((bytes[i+1] & 0x3F) << 12) |
+//                                 ((bytes[i+2] & 0x3F) << 6) | (bytes[i+3] & 0x3F)));
+//                 i += 4;
+//             } else {
+//                 out.push_back(0xFFFD); i += 1;
+//             }
+//         }
+//         return out;
+//     }
+// }
+
+
+===== FILE: ./include/utils/types/expected.h =====
+#pragma once
+
+#include "common/pch.h"
+
+#if __cplusplus >= 202300L
+#include <expected>
+template <typename T, typename E>
+using Expected = std::expected<T, E>;
+#else
+
+template <typename T, typename E>
+class Expected {
+public:
+    Expected(const T& value) : data(value) {}
+    Expected(T&& value) : data(std::move(value)) {}
+
+    Expected(const E& error) : data(error) {}
+    Expected(E&& error) : data(std::move(error)) {}
+
+    [[nodiscard]] inline bool has_value() const noexcept {
+        return std::holds_alternative<T>(data);
+    }
+
+    explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    [[nodiscard]] inline const T& value() const {
+        if (!has_value()) {
+            throw std::bad_variant_access();
+        }
+        return std::get<T>(data);
+    }
+
+    [[nodiscard]] inline T& value() {
+        if (!has_value()) {
+            throw std::bad_variant_access();
+        }
+        return std::get<T>(data);
+    }
+
+    [[nodiscard]] inline const E& error() const {
+        if (has_value()) {
+            throw std::bad_variant_access();
+        }
+        return std::get<E>(data);
+    }
+
+    [[nodiscard]] inline E& error() {
+        if (has_value()) {
+            throw std::bad_variant_access();
+        }
+        return std::get<E>(data);
+    }
+
+private:
+    std::variant<T, E> data;
+};
+#endif
+
+
+===== FILE: ./include/utils/types/optional.h =====
+#pragma once
+
+#include "common/pch.h"
+
+namespace meow::utils {
+    template <typename T>
+    class Optional {
+    private:
+        using byte_t = unsigned char;
+
+        bool has_value_;
+        // alignas type variable -> căn chỉnh vùng nhớ kiểu type cho biến variable
+        // struct alignas(16) Struct {}
+
+        // Ta cần một vùng nhớ cho storage
+        // Nhớ lại kiến thức về memory ta thấy vùng nhớ là gồm các byte
+        // Nhớ lại kiến thức về con trỏ
+        // Nhớ luôn việc vì sao chỉ dereference lại cần kiểu con trỏ cụ thể (ví dụ int*) còn void* thì không
+        // Ta sẽ nhận ra ta cần làm việc mà compiler đã làm
+        // Nhưng giờ ta sẽ làm thủ công vì cần độ chính xác tuyệt đối
+        // Đó là ALIGNMENT
+
+        // alignas(alignment) type variable
+        // Thực ra nó không khác gì khai báo biến bình thường cả
+        // Ở đây là khai báo mảng như thường "byte_t storage_[sizeof(T)]"
+        // Nhưng thêm alignas(T) để địa chỉ của nó chia hết cho số byte của T
+        // Tương tự như địa chỉ mà int* giữ chia hết cho sizeof(int)
+        alignas(T) byte_t storage_[sizeof(T)]; // Vùng nhớ để chưa object
+
+        [[nodiscard]] inline const T* ptr() const noexcept {
+            // Đổi góc nhìn của compiler về storage_
+            // Thay góc nhìn của compiler rồi
+            // Nhưng CPU yêu cầu object cần nằm ở địa chỉ alignment
+            // Ta cần tự căn chỉnh vì với optional, variant cần vùng nhớ thô, thủ công
+            // Đồng thời cũng để dùng reinterpret_cast như này
+            return reinterpret_cast<T*>(storage_);
+        }
+        [[nodiscard]] inline T* ptr() noexcept {
+            return reinterpret_cast<T*>(storage_);
+        }
+
+        template <typename T = int>
+        // inline void alloc(const T& var) noexcept {
+        //     new (storage_) var;
+        // }
+    public:
+        // --- Constructors ---
+        Optional() noexcept: has_value_(false) {}
+        explicit Optional(const T& value): has_value_(true) {
+            // new placement - không tạo vùng nhớ mới
+            // Dùng vùng nhớ đã tạo, để object vào đó
+            new (storage_) T(value);
+        }
+        explicit Optional(T&& value) noexcept: has_value_(true) {
+            new (storage_) T(std::move(value));
+        }
+        explicit Optional(const Optional& other): has_value_(other.has_value_) {
+            if (has_value_) {
+                new (storage_) T(other.get());
+            }
+        }
+        explicit Optional(Optional&& other) noexcept: has_value_(other.has_value_) {
+            other.has_value_ = false;
+            if (has_value_) {
+                new (storage_) T(std::move(other.get()));
+            }
+        }
+        ~Optional() { reset(); }
+
+        // --- Operator overloads ---
+        inline Optional& operator=(const Optional& other) noexcept {
+            if (this == &other) return *this;
+            reset();
+            has_value_ = other.has_value_;
+            if (has_value_) {
+                new (storage_) T(other.get());
+            }
+            return *this;
+        }
+        inline Optional& operator=(Optional&& other) noexcept {
+            if (this == &other) return *this;
+            reset();
+            if (has_value_) {
+                new (storage_) T(std::move(other.get()));
+            }
+            has_value_ = other.has_value_;
+            return *this;
+        }
+
+        // --- Modifiers ---
+        inline void reset() noexcept {
+            if (has_value_) {
+                ptr()->~T(); // Vùng nhớ thô, không tự gọi destructor được, phải gọi thủ công
+                has_value_ = false;
+            }
+        }
+
+        template <typename...Args>
+        inline void emplace(Args&&...args) noexcept(std::is_nothrow_constructible_v<T, Args&&...>) {
+            reset();
+            new (storage_) T(std::forward<Args>(args)...);
+            has_value_ = true;
+        }
+
+        // --- Observers ---
+        explicit operator bool() const noexcept {
+            return has_value_;
+        }
+        [[nodiscard]] inline bool has() const noexcept {
+            return has_value_;
+        }
+        [[nodiscard]] inline const T& get() const noexcept {
+            return *ptr();
+        }
+        [[nodiscard]] inline T& get() noexcept {
+            return *ptr();
+        }
+        [[nodiscard]] inline const T& safe_get() const {
+            if (!has_value_) throw std::runtime_error("No value");
+            return *ptr();
+        }
+        [[nodiscard]] inline T& safe_get() {
+            if (!has_value_) throw std::runtime_error("No value");
+            return *ptr();
+        }
+
+        [[nodiscard]] inline const T& operator*() const noexcept {
+            return *ptr();
+        }
+        [[nodiscard]] inline T& operator*() noexcept {
+            return *ptr();
+        }
+    };
+}
+
+===== FILE: ./include/vm/meow_engine.h =====
+#pragma once
+
+namespace meow::vm {
+    class MeowEngine {
+    public:
+        
+    };
+}
+
+
+===== FILE: ./include/vm/meow_vm.h =====
+#pragma once
+
+#include "common/pch.h"
+#include "vm/meow_engine.h"
+
+namespace meow::vm {
+    struct VMError : public std::runtime_error {
+        explicit VMError(const std::string& message): std::runtime_error(message) {}
+    };
+
+    struct VMArgs {
+        std::vector<std::string> command_line_arguments_;
+        std::string entry_point_directory_;
+        std::string entry_path_;
+    };
+
+    struct ExecutionContext;
+    struct BuiltinRegistry;
+    class MemoryManager;
+    class ModuleManager;
+    class OperatorDispatcher;
+
+    class MeowVM : public MeowEngine {
+    public:
+        // --- Constructors ---
+        explicit MeowVM(const std::string& entry_point_directory, const std::string& entry_path, int argc, char* argv[]);
+        MeowVM(const MeowVM&) = delete;
+        MeowVM& operator=(const MeowVM&) = delete;
+        ~MeowVM();
+
+        // --- Public API ---
+        void interpret() noexcept;
+        // Value interpret() noexcept;
+    private:
+        // --- Subsystems ---
+        std::unique_ptr<ExecutionContext> context_;
+        std::unique_ptr<BuiltinRegistry> builtins_;
+        std::unique_ptr<MemoryManager> heap_;
+        std::unique_ptr<ModuleManager> mod_manager_;
+        std::unique_ptr<OperatorDispatcher> op_dispatcher_;
+
+        // --- Runtime arguments ---
+        VMArgs args_;
+
+        // --- Execution internals ---
+        void prepare() noexcept;
+        void run();
+
+        // --- Error helpers ---
+        [[noreturn]] inline void throwVMError(const std::string& message) {
+            throw VMError(message);
+        }
+    };
+}
+
+
+===== FILE: ./src/core/objects.cpp =====
+#include "core/objects.h"
+#include "memory/gc_visitor.h"
+
+using namespace meow::core::objects;
+
+void ObjArray::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    for (const auto& element : elements_) {
+        visitor.visit_value(element);
+    }
+}
+
+void ObjHash::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    for (const auto& [key, value] : fields_) {
+        visitor.visit_object(key);
+        visitor.visit_value(value);
+    }
+}
+
+void ObjClass::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(name_);
+    visitor.visit_object(superclass_);
+    for (const auto& [name, method] : methods_) {
+        visitor.visit_object(name);
+        visitor.visit_value(method);
+    }
+}
+
+void ObjInstance::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(klass_);
+    for (const auto& [key, value] : fields_) {
+        visitor.visit_object(key);
+        visitor.visit_value(value);
+    }
+}
+
+void ObjBoundMethod::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(instance_);
+    visitor.visit_object(function_);
+}
+
+void ObjUpvalue::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_value(closed_);
+}
+
+void ObjFunctionProto::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(name_);
+    for (size_t i = 0; i < chunk_.get_pool_size(); ++i) {
+        visitor.visit_value(chunk_.get_constant(i));
+    }
+}
+
+void ObjClosure::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(proto_);
+    for (const auto& upvalue : upvalues_) {
+        visitor.visit_object(upvalue);
+    }
+}
+
+void ObjModule::trace(meow::memory::GCVisitor& visitor) const noexcept {
+    visitor.visit_object(file_name_);
+    visitor.visit_object(file_path_);
+    for (const auto& [key, value] : globals_) {
+        visitor.visit_object(key);
+        visitor.visit_value(value);
+    }
+    for (const auto& [key, value] : exports_) {
+        visitor.visit_object(key);
+        visitor.visit_value(value);
+    }
+    visitor.visit_object(main_proto_);
+}
+
+
+===== FILE: ./src/main.cpp =====
+#include "vm/meow_vm.h"
+
+
+===== FILE: ./src/memory/mark_sweep_gc.cpp =====
+#include "memory/mark_sweep_gc.h"
+#include "core/value.h"
+#include "runtime/execution_context.h"
+#include "runtime/builtin_registry.h"
+
+using namespace meow::memory;
+
+MarkSweepGC::~MarkSweepGC() {
+    std::cout << "[destroy] Đang xử lí các object khi hủy GC" << std::endl;
+    for (auto const& [obj, data] : metadata_) {
+        delete obj;
+    }
+}
+
+void MarkSweepGC::register_object(const meow::core::MeowObject* object) {
+    std::cout << "[register] Đang đăng kí object: " << object << std::endl;
+    metadata_.emplace(object, GCMetadata{});
+}
+
+size_t MarkSweepGC::collect() noexcept {
+    std::cout << "[collect] Đang collect các object" << std::endl;
+
+    context_->trace(*this);
+    builtins_->trace(*this);
+
+    for (auto it = metadata_.begin(); it != metadata_.end();) {
+        const meow::core::MeowObject* object = it->first;
+        GCMetadata& data = it->second;
+
+        if (data.is_marked_) {
+            data.is_marked_ = false;
+            ++it;
+        } else {
+            delete object;
+            it = metadata_.erase(it);
+        }
+    }
+
+    return metadata_.size();
+}
+
+void MarkSweepGC::visit_value(const meow::core::Value& value) noexcept {
+    if (value.is_object()) mark(value.as_object());
+}
+
+void MarkSweepGC::visit_object(const meow::core::MeowObject* object) noexcept { mark(object); }
+
+void MarkSweepGC::mark(const meow::core::MeowObject* object) {
+    if (object == nullptr) return;
+    auto it = metadata_.find(object);
+    if (it == metadata_.end() || it->second.is_marked_) return;
+    it->second.is_marked_ = true;
+    object->trace(*this);
+}
+
+
+===== FILE: ./src/memory/memory_manager.cpp =====
+#include "memory/memory_manager.h"
+#include "core/objects.h"
+
+using namespace meow::memory;
+
+MemoryManager::MemoryManager(std::unique_ptr<GarbageCollector> gc) 
+    : gc_(std::move(gc)), gc_threshold_(1024), object_allocated_(0) {}
+
+MemoryManager::~MemoryManager() = default;
+
+meow::core::String MemoryManager::new_string(const std::string& string) {
+    auto it = string_pool_.find(string);
+    if (it != string_pool_.end()) {
+        return it->second;
+    }
+
+    meow::core::String new_string_object = new_object<meow::core::objects::ObjString>(string);
+    string_pool_[string] = new_string_object;
+    return new_string_object;
+}
+
+meow::core::String MemoryManager::new_string(const char* chars, size_t length) {
+    return new_string(std::string(chars, length));
+}
+
+meow::core::Array MemoryManager::new_array(const std::vector<meow::core::Value>& elements) {
+    return new_object<meow::core::objects::ObjArray>(elements);
+}
+
+meow::core::Hash MemoryManager::new_hash(const std::unordered_map<meow::core::String, meow::core::Value>& fields) {
+    return new_object<meow::core::objects::ObjHash>(fields);
+}
+
+meow::core::Upvalue MemoryManager::new_upvalue(size_t index) {
+    return new_object<meow::core::objects::ObjUpvalue>(index);
+}
+
+meow::core::Proto MemoryManager::new_proto(size_t registers, size_t upvalues, meow::core::String name, meow::runtime::Chunk&& chunk) {
+    return new_object<meow::core::objects::ObjFunctionProto>(registers, upvalues, name, std::move(chunk));
+}
+
+meow::core::Function MemoryManager::new_function(meow::core::Proto proto) {
+    return new_object<meow::core::objects::ObjClosure>(proto); 
+}
+
+meow::core::Module MemoryManager::new_module(meow::core::String file_name, meow::core::String file_path, meow::core::Proto main_proto) {
+    return new_object<meow::core::objects::ObjModule>(file_name, file_path, main_proto);
+}
+
+meow::core::NativeFn MemoryManager::new_native(meow::core::objects::ObjNativeFunction::native_fn_simple fn) {
+    return new_object<meow::core::objects::ObjNativeFunction>(fn);
+}
+
+meow::core::NativeFn MemoryManager::new_native(meow::core::objects::ObjNativeFunction::native_fn_double fn) {
+    return new_object<meow::core::objects::ObjNativeFunction>(fn);
+}
+
+meow::core::Class MemoryManager::new_class(meow::core::String name) {
+    return new_object<meow::core::objects::ObjClass>(name);
+}
+
+meow::core::Instance MemoryManager::new_instance(meow::core::Class klass) {
+    return new_object<meow::core::objects::ObjInstance>(klass);
+}
+
+meow::core::BoundMethod MemoryManager::new_bound_method(meow::core::Instance instance, meow::core::Function function) {
+    return new_object<meow::core::objects::ObjBoundMethod>(instance, function);
+}
+
+
+===== FILE: ./src/vm/meow_vm.cpp =====
+
+
+
