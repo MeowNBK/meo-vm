@@ -61,11 +61,11 @@ private:
     Upvalue captureUpvalue(Int slotIndex);
     void _executeCall(const Value& callee, Int dst, Int argStart, Int argc, Int base);
 
-    MemoryManager* getMemoryManager() override { return this->memoryManager.get(); }
+    MemoryManager* get_heap() noexcept override { return this->memoryManager.get(); }
     Value call(const Value& callee, Arguments args) override;
-    void registerMethod(const Str& typeName, const Str& methodName, const Value& method) override;
-    void registerGetter(const Str& typeName, const Str& propName, const Value& getter) override;
-    const std::vector<Str>& getArguments() const override { return commandLineArgs; }
+    void register_method(const Str& type_name, const Str& method_name, const Value& method) noexcept override;
+    void register_getter(const Str& type_name, const Str& property_name, const Value& getter) noexcept override;
+    const std::vector<Str>& get_arguments() const noexcept override { return commandLineArgs; }
 
     Function wrapClosure(const Value& maybeCallable);
     std::optional<Value> getMagicMethod(const Value& obj, const Str& name);

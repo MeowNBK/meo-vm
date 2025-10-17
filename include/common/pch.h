@@ -31,3 +31,5 @@
 #include <stdexcept>
 #include <cerrno>
 #include <cstdlib>
+
+#include <utils/variant.h>

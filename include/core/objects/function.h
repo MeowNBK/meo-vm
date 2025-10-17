@@ -77,7 +77,7 @@ namespace meow::core::objects {
 
         inline void trace(visitor_t& visitor) const noexcept override {
             for ()
-            visitor.visit_object(string_t);
+            visitor.visit_object(name_);
         }
     };
 

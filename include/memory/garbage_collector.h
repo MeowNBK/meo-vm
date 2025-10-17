@@ -1,6 +1,7 @@
 #pragma once
 #include "core/meow_object.h"
 
+class MeowObject;
 class MeowVM;
 
 class GarbageCollector {
